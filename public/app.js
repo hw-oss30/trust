@@ -78,7 +78,7 @@
   // ---------- Zustand ----------
   let data = null;
   const ui = {
-    tab: store.get("tr-tab") || "overview", tmView: store.get("tr-tmview") === "list" ? "list" : "cal", tmMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1), unit: store.get("tr-unit") === "h" ? "h" : "pct", calMode: store.get("tr-calmode") === "time" ? "time" : "abs",
+    tab: store.get("tr-tab") || "overview", tmView: store.get("tr-tmview") === "list" ? "list" : "cal", projView: store.get("tr-projview") === "list" ? "list" : "cards", ovQ: "", tmMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1), unit: store.get("tr-unit") === "h" ? "h" : "pct", calMode: store.get("tr-calmode") === "time" ? "time" : "abs",
     calProj: "", projSel: null, year: new Date().getFullYear(), calMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   };
 
@@ -215,6 +215,31 @@
       <div class="pos-list">${(p.positions || []).map(x => { const b = Number(x.gebucht) || 0, s = Number(x.stunden) || 0, c = progCls(b, s); return `<div class="pos-row"><span>${esc(x.name)}</span><span class="val pct ${c}">${progText(b, s)}</span>${progBar(b, s, c)}</div>`; }).join("") || `<span class="muted" style="font-size:.84rem">Keine Positionen festgelegt.</span>`}</div>
     </div>`;
   }
+  // Projektsuche: alle Suchwörter müssen in Name, Nummer, Kunde oder Positionen vorkommen
+  const projLabel = (p) => [p.nummer, p.name, p.kunde].filter(Boolean).join(" · ");
+  function projMatches(p, q) {
+    const hay = [p.name, p.nummer, p.kunde, ...(p.positions || []).map(x => x.name)].join(" ").toLowerCase();
+    return String(q || "").toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+  }
+  // Projekte als Karten oder als Liste untereinander
+  function projectsBlock(projs) {
+    if (ui.projView !== "list") return `<div class="projects">${projs.map(projCard).join("")}</div>`;
+    return `<div class="tablebox proj-table"><table><thead><tr><th>Projekt</th><th>Positionen</th><th class="num">Gebucht / Geplant</th><th class="num">Fortschritt</th><th style="width:16%"></th><th></th></tr></thead><tbody>${projs.map(p => {
+      const budget = budgetOf(p), booked = Number(p.gebucht) || 0, cls = progCls(booked, budget);
+      return `<tr class="click ${ui.tab === "projects" && p.id === ui.projSel ? "sel" : ""}" data-proj="${esc(p.id)}" tabindex="0">
+        <td><div class="name"><span class="dot" style="background:${projColor(p)};margin-right:8px"></span>${esc(p.name || "Ohne Namen")} ${projBadges(p)}</div><div class="muted" style="font-size:.82rem">${esc([p.nummer, p.kunde || (p.intern ? "Intern" : "")].filter(Boolean).join(" · ") || "–")}${p.start || p.ende ? ` · ${de(p.start)} – ${de(p.ende)}` : ""}</div></td>
+        <td><div class="chips">${(p.positions || []).map(x => { const b = Number(x.gebucht) || 0, s2 = Number(x.stunden) || 0; return `<span class="chip" title="${esc(progTitle(b, s2))}">${esc(x.name)} <span class="pct ${progCls(b, s2)}">${progText(b, s2)}</span></span>`; }).join("") || `<span class="muted">–</span>`}</div></td>
+        <td class="num">${fmtH(booked)} / ${budget ? fmtH(budget) + " h" : "–"}</td>
+        <td class="num"><strong class="pct ${cls}">${budget ? Math.round(booked / budget * 100) + " %" : "–"}</strong></td>
+        <td>${progBar(booked, budget, cls)}</td>
+        <td class="actions">${can("projects.manage") ? editBtn(`data-edit-proj="${esc(p.id)}" aria-label="Projekt ${esc(p.name)} bearbeiten"`) : ""}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
+  }
+  function viewSeg() { return `<div class="seg proj-view-seg" role="group" aria-label="Ansicht"><button data-pview="cards" aria-selected="${ui.projView === "cards"}">Karten</button><button data-pview="list" aria-selected="${ui.projView === "list"}">Liste</button></div>`; }
+  function bindViewSeg(root) {
+    $$(".proj-view-seg button", root).forEach(b => b.onclick = () => { ui.projView = b.dataset.pview; store.set("tr-projview", ui.projView); render(); });
+  }
+
   // Sichtbarer Bearbeiten-Knopf (zusätzlich ist die ganze Zeile anklickbar)
   const editBtn = (attr, label = "Bearbeiten") => `<button type="button" class="small edit-btn" ${attr}><span aria-hidden="true">✎</span> ${label}</button>`;
   const projBadges = (p) => (p.intern ? `<span class="pill neutral">Intern</span>` : "") + (p.archiviert ? `<span class="pill neutral">Archiviert</span>` : p.status === "abgeschlossen" ? `<span class="pill neutral">Abgeschlossen</span>` : "");
@@ -256,14 +281,15 @@
     const myNext = data.absences.filter(a => a.mitarbeiterId === me().id && a.bis >= t && a.status !== "abgelehnt").sort((a, b) => a.von.localeCompare(b.von)).slice(0, 5);
     const myLast = [...mine].sort((a, b) => b.datum.localeCompare(a.datum) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 6);
     const projs = sortedProjects(false);
+    const ovList = () => { const list = projs.filter(p => projMatches(p, ui.ovQ)); return list.length ? projectsBlock(list) : `<div class="empty">${projs.length ? "Kein Projekt gefunden." : `Noch keine laufenden Projekte.${can("projects.manage") ? " Lege über „Projekt anlegen“ das erste an." : ""}`}</div>`; };
 
     v.innerHTML = `
       <div class="toolbar"><div><span class="eyebrow">${WD[td.getDay()]}, ${de(t)}${holidayName(t) ? " · " + esc(holidayName(t)) : ""}</span><h2 style="font-size:1.5rem">Moin, ${esc(me().vorname || me().username)}!</h2></div></div>
       ${stats.length ? `<div class="stats">${stats.map(x => `<div class="stat"><span class="eyebrow">${esc(x.k)}</span><span class="big">${x.v}</span><span class="sub">${esc(x.s)}</span></div>`).join("")}</div>` : ""}
       ${can("projects.view") ? `<div class="panel">
-        <div class="panel-head"><h2>Projektstand</h2><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${unitSeg()}${can("projects.manage") ? `<button class="small" id="ov-add-proj">Projekt anlegen</button>` : ""}</div></div>
+        <div class="panel-head"><h2>Projektstand</h2><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="search" id="ov-q" class="pill-input" placeholder="Projekt, Nummer, Kunde …" aria-label="Projekte suchen" value="${esc(ui.ovQ)}">${viewSeg()}${unitSeg()}${can("projects.manage") ? `<button class="small" id="ov-add-proj">Projekt anlegen</button>` : ""}</div></div>
         <div class="legend"><span><span class="dot" style="background:var(--ok)"></span>unter 80 %</span><span><span class="dot" style="background:var(--warn)"></span>80–100 %</span><span><span class="dot" style="background:var(--bad)"></span>über Budget</span></div>
-        ${projs.length ? `<div class="projects">${projs.map(projCard).join("")}</div>` : `<div class="empty">Noch keine laufenden Projekte.${can("projects.manage") ? " Lege über „Projekt anlegen“ das erste an." : ""}</div>`}
+        <div id="ov-projlist">${ovList()}</div>
       </div>` : ""}
       <div class="grid2">
         <div style="display:flex;flex-direction:column;gap:20px;min-width:0">
@@ -276,7 +302,8 @@
           <div class="panel"><div class="panel-head"><h2>Meine nächsten Abwesenheiten</h2></div><div class="list">${myNext.length ? myNext.map(a => `<div class="list-row"><div class="who"><span class="name">${typePill(a.art)}</span><span class="muted" style="font-size:.85rem">${range(a)}</span></div>${statusPill(a.status)}</div>`).join("") : `<div class="muted" style="font-size:.9rem">Nichts geplant.</div>`}</div></div>
         </div>
       </div>`;
-    bindProjCards(v); bindUnitSeg(v); bindDecisions(v);
+    bindProjCards(v); bindUnitSeg(v); bindViewSeg(v); bindDecisions(v);
+    const oq = $("#ov-q", v); if (oq) oq.oninput = () => { ui.ovQ = oq.value; const box = $("#ov-projlist"); box.innerHTML = ovList(); bindProjCards(box); };
     const ap = $("#ov-add-proj"); if (ap) ap.onclick = () => openProj(null);
     const at = $("#ov-add-time"); if (at) at.onclick = () => openTime(null);
     $$("[data-time]", v).forEach(r => r.onclick = () => openTime(data.times.find(x => x.id === r.dataset.time)));
@@ -299,12 +326,14 @@
     const st = $("#pj-status").value;
     const all = sortedProjects(true);
     const FILTERS = { aktiv: p => !p.archiviert && p.status !== "abgeschlossen", intern: p => !p.archiviert && p.intern, abgeschlossen: p => !p.archiviert && p.status === "abgeschlossen", archiviert: p => p.archiviert };
-    const projs = all.filter(p => !st || (FILTERS[st] || (() => true))(p));
+    const q = $("#pj-q").value.trim();
+    const projs = all.filter(p => (!st || (FILTERS[st] || (() => true))(p)) && projMatches(p, q));
     if (!projs.some(p => p.id === ui.projSel)) ui.projSel = (projs[0] || {}).id || null;
     $("#btn-add-proj").hidden = !can("projects.manage");
     const box = $("#pj-list");
-    box.innerHTML = projs.length ? projs.map(projCard).join("") : `<div class="panel empty">${all.length ? "Keine Projekte mit diesem Status." : "Noch keine Projekte." + (can("projects.manage") ? " Lege über „Projekt anlegen“ das erste an." : "")}</div>`;
-    bindProjCards(box); bindUnitSeg($("#v-projects"));
+    $$("#v-projects .proj-view-seg button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.pview === ui.projView)));
+    box.innerHTML = projs.length ? projectsBlock(projs) : `<div class="panel empty">${all.length ? (q ? "Kein Projekt gefunden." : "Keine Projekte mit diesem Status.") : "Noch keine Projekte." + (can("projects.manage") ? " Lege über „Projekt anlegen“ das erste an." : "")}</div>`;
+    bindProjCards(box); bindUnitSeg($("#v-projects")); bindViewSeg($("#v-projects"));
 
     const rep = $("#pj-report"); const p = projById(ui.projSel);
     if (!p) { rep.hidden = true; return; }
@@ -421,7 +450,7 @@
     eSel.innerHTML = (calView ? "" : `<option value="">Alle Mitarbeiter</option>`) + [...data.users].sort(sortEmp).map(e => `<option value="${esc(e.id)}">${esc(fullName(e))}</option>`).join("");
     eSel.value = data.users.some(e => e.id === curE) ? curE : calView ? me().id : "";
     const curP = pSel.value;
-    pSel.innerHTML = `<option value="">Alle Projekte</option>` + sortedProjects(true).map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+    pSel.innerHTML = `<option value="">Alle Projekte</option>` + sortedProjects(true).map(p => `<option value="${esc(p.id)}">${esc(projLabel(p))}</option>`).join("");
     pSel.value = projById(curP) ? curP : "";
     if (calView) return renderTimeCal(empById(eSel.value) || me(), pSel.value);
     const rows = filteredTimes();
@@ -669,7 +698,7 @@
     $$("#cal-mode button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.mode === ui.calMode)));
     const ps = $("#cal-proj"); ps.hidden = !timeMode;
     if (timeMode) {
-      ps.innerHTML = `<option value="">Alle Projekte</option>` + sortedProjects(true).map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+      ps.innerHTML = `<option value="">Alle Projekte</option>` + sortedProjects(true).map(p => `<option value="${esc(p.id)}">${esc(projLabel(p))}</option>`).join("");
       ps.value = projById(ui.calProj) ? ui.calProj : ""; ui.calProj = ps.value;
     }
     const seeAll = timeMode ? can("times.view_all") : can("absences.view_all");
@@ -1070,9 +1099,10 @@
       <div><span class="eyebrow">${isNew ? "Neu" : "Zeiteintrag"}</span><h2>${isNew ? "Zeit erfassen" : ro ? "Zeiteintrag" : "Zeiteintrag bearbeiten"}</h2></div>
       <form id="f-time" novalidate>
         <label>Mitarbeiter<select id="t-emp" ${manage && !ro ? "" : "disabled"}>${ePool.map(e => `<option value="${esc(e.id)}">${esc(fullName(e))}</option>`).join("")}</select></label>
-        <div class="row2"><label>Projekt<select id="t-proj" ${dis}>${pPool.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select></label>
-          <label>Position<select id="t-pos" ${dis}></select></label></div>
-        <label>Datum<input id="t-datum" type="date" value="${esc(t.datum)}" ${dis}></label>
+        ${ro ? "" : `<label>Projekt suchen<input id="t-proj-q" type="search" placeholder="Name, Projektnummer oder Kunde" autocomplete="off"></label>`}
+        <label>Projekt<select id="t-proj" ${dis}>${pPool.map(p => `<option value="${esc(p.id)}">${esc(projLabel(p))}</option>`).join("")}</select></label>
+        <div class="row2"><label>Position<select id="t-pos" ${dis}></select></label>
+          <label>Datum<input id="t-datum" type="date" value="${esc(t.datum)}" ${dis}></label></div>
         <div class="row3"><label>Von<input id="t-von" type="time" value="${esc(t.von)}" ${dis}></label><label>Bis<input id="t-bis" type="time" value="${esc(t.bis)}" ${dis}></label><label>Pause (Min.)<input id="t-pause" type="number" min="0" step="5" value="${esc(t.pause)}" ${dis}></label></div>
         <label>Stunden<input id="t-std" type="number" min="0" max="24" step="0.25" value="${esc(t.stunden)}" placeholder="oder Von/Bis ausfüllen" ${dis}></label>
         <div class="hint" id="t-calc"></div>
@@ -1116,6 +1146,18 @@
       ["#t-von", "#t-bis", "#t-pause"].forEach(s => q(s).addEventListener("input", () => { fromClock(); hint(); }));
       ["#t-std", "#t-datum", "#t-pos"].forEach(s => q(s).addEventListener("input", hint));
       q("#t-proj").addEventListener("input", () => { fillPos(); hint(); });
+      const pq = q("#t-proj-q");
+      if (pq) {
+        pq.addEventListener("input", () => {
+          const cur = q("#t-proj").value;
+          const list = pPool.filter(p => projMatches(p, pq.value));
+          q("#t-proj").innerHTML = list.length ? list.map(p => `<option value="${esc(p.id)}">${esc(projLabel(p))}</option>`).join("") : `<option value="">Kein Projekt gefunden</option>`;
+          if (list.some(p => p.id === cur)) q("#t-proj").value = cur;
+          fillPos(); hint();
+        });
+        // Enter im Suchfeld übernimmt den ersten Treffer statt das Formular abzuschicken
+        pq.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); q("#t-pos").focus(); } });
+      }
       q("#t-emp").addEventListener("input", () => { fillPos(q("#t-pos").value); hint(); });
       hint();
       q("#t-cancel").onclick = closeDrawer;
@@ -1125,6 +1167,7 @@
         ev.preventDefault();
         const std = Number(q("#t-std").value);
         if (!q("#t-datum").value) { showErr(d, "#t-err", "Bitte ein Datum eintragen."); return; }
+        if (!projById(q("#t-proj").value)) { showErr(d, "#t-err", "Bitte ein Projekt auswählen."); return; }
         if (!q("#t-pos").value && ((projById(q("#t-proj").value) || {}).positions || []).length) { showErr(d, "#t-err", "Bitte eine Position wählen."); return; }
         if (!std || std <= 0 || std > 24) { showErr(d, "#t-err", "Bitte Stunden zwischen 0 und 24 eintragen oder Von und Bis ausfüllen."); return; }
         const body = { mitarbeiterId: q("#t-emp").value, projektId: q("#t-proj").value, positionId: q("#t-pos").value, datum: q("#t-datum").value,
@@ -1230,6 +1273,7 @@
   $("#btn-add-user").onclick = () => openUser(null);
   $("#btn-add-role").onclick = () => openRole(null);
   $("#pj-status").addEventListener("input", renderProjects);
+  $("#pj-q").addEventListener("input", renderProjects);
 
   // ---------- Start ----------
   // Regelmäßig nachladen, damit Änderungen anderer sichtbar werden

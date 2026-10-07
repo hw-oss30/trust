@@ -376,3 +376,9 @@ label.perm.admin { border: 1px solid var(--glass-edge); }
 .proj .edit-btn { padding: 3px 10px; font-size: .76rem; }
 #roles-list .list-row { flex-wrap: nowrap; align-items: center; }
 #roles-list .who { flex: 1; }
+.toolbar .filters input[type="search"]#pj-q { width: 220px; }
+input.pill-input { width: 220px; max-width: 100%; border-radius: 999px; padding: 6px 14px; font-size: .86rem; }
+.proj-table td { vertical-align: middle; }
+.proj-table tr.sel td { background: var(--accent-soft); }
+.proj-table .chips { gap: 4px; }
+.proj-table .name .pill { margin-left: 6px; font-size: .7rem; padding: 1px 8px; vertical-align: 1px; }

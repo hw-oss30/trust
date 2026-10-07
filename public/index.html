@@ -51,6 +51,7 @@
     <section class="view" id="v-projects" hidden>
       <div class="toolbar">
         <div class="filters">
+          <input type="search" id="pj-q" placeholder="Projekt, Nummer, Kunde …" aria-label="Projekte suchen">
           <select id="pj-status" aria-label="Projektstatus">
             <option value="aktiv">Laufende Projekte</option>
             <option value="intern">Interne Projekte</option>
@@ -59,10 +60,11 @@
             <option value="">Alle Projekte</option>
           </select>
           <div class="seg unit-seg" role="group" aria-label="Anzeige"><button data-unit="pct" aria-selected="true">Prozent</button><button data-unit="h" aria-selected="false">Stunden</button></div>
+          <div class="seg proj-view-seg" role="group" aria-label="Ansicht"><button data-pview="cards" aria-selected="true">Karten</button><button data-pview="list" aria-selected="false">Liste</button></div>
         </div>
         <button class="primary" id="btn-add-proj" hidden>Projekt anlegen</button>
       </div>
-      <div class="projects" id="pj-list"></div>
+      <div id="pj-list"></div>
       <div class="panel" id="pj-report" hidden></div>
     </section>
 

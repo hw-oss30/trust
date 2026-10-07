@@ -1,6 +1,6 @@
 # Trustreels Personal
 
-Personal- und Projektsoftware für Trustreels, aufgebaut auf der Teamkartei-Vorlage (gleiches Dunkel-/Glas-Design).
+Personal- und Projektsoftware für Trustreels, aufgebaut auf der Teamkartei-Vorlage (Glas-Design auf reinem Schwarz, optional hell).
 
 ## Funktionen
 
@@ -11,7 +11,12 @@ Personal- und Projektsoftware für Trustreels, aufgebaut auf der Teamkartei-Vorl
 - **Projekte** (dürfen standardmäßig nur Admins anlegen): Kunde, Projektnummer, Zeitraum und **Positionen mit geplanten Stunden** (z. B. Kameramann 20 h, Editor 40 h). Mitarbeiter buchen ihre Stunden auf eine Position.
 - **Projektübersicht:** Stand aller laufenden Projekte als farbige Prozentzahl (grün unter 80 %, gelb 80–100 %, rot über Budget), gesamt und je Position. Mit dem Schalter „Prozent / Stunden“ siehst du stattdessen die Stunden.
 - **Benutzereinstellungen:** Jeder kann sein eigenes Passwort ändern. Admins können zusätzlich jedes Passwort neu setzen.
-- Feiertage NRW, Urlaubskonto, CSV-Export der Stunden, läuft auch auf dem Handy.
+- **Zeiterfassung als Kalender:** Monatsansicht mit gebuchten Stunden, Tagessoll und Abwesenheiten. Ein Klick auf einen Tag bucht Zeit. Alternativ gibt es die Listenansicht mit CSV-Export.
+- **Projektoptionen:** „Internes Projekt“ für Zeiten ohne Kunde (Büro, Akquise …, Positionen optional) und „Archivieren“ (verschwindet aus Übersicht und Buchung, bleibt im Filter „Archiv“).
+- **Statistiken:** Überstunden, Resturlaub, Urlaub genommen/beantragt, Krankheitstage und Krankmeldungen je Mitarbeiter. Das Soll zählt ab Konto-Anlage oder ab „Überstunden zählen ab“; ein Übertrag aus der Zeit davor lässt sich eintragen.
+- **Mitarbeiter-Report als PDF:** Monat und Mitarbeiter wählen (Admins auch „Alle“), dann „Als PDF speichern“. Der Report enthält jeden Tag mit Status, Soll, Ist und Tätigkeiten, Summen, Abwesenheiten, Jahreswerte und Unterschriftsfelder.
+- **Dunkel oder Hell:** in den Benutzereinstellungen wählbar („Wie Gerät“ folgt der Systemeinstellung), gespeichert pro Benutzer.
+- Feiertage NRW, Urlaubskonto, läuft auch auf dem Handy.
 
 ### Rechte im Überblick
 

@@ -136,3 +136,24 @@ test("Statische Dateien werden ausgeliefert, Pfade außerhalb nicht", async () =
   const bad = await fetch(base + "/..%2fserver.js");
   assert.notEqual(bad.status, 200);
 });
+
+test("Interne Projekte ohne Positionen und archivierte Projekte", async () => {
+  emp = await login("max", "vomAdmin123"); // alte Sitzung endete mit dem Passwortwechsel
+  const intern = await admin("POST", "/api/projects", { name: "Büro & Akquise", intern: true, positions: [] });
+  assert.equal(intern.status, 200);
+  const ok = await emp("POST", "/api/times", { projektId: intern.body.id, positionId: "", datum: "2026-10-07", stunden: 2 });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const p = (await admin("GET", "/api/bootstrap")).body.projects.find(x => x.id === projId);
+  assert.equal((await admin("PUT", `/api/projects/${projId}`, { ...p, archiviert: true })).status, 200);
+  const r = await emp("POST", "/api/times", { projektId: projId, positionId: editorPos, datum: "2026-10-07", stunden: 1 });
+  assert.equal(r.status, 400, "auf archivierte Projekte kann nicht gebucht werden");
+  const b = (await emp("GET", "/api/bootstrap")).body;
+  assert.equal(b.projects.find(x => x.id === intern.body.id).intern, true);
+  assert.equal((await admin("PUT", `/api/projects/${projId}`, { ...p, archiviert: false })).status, 200);
+});
+
+test("Darstellung wird pro Benutzer gespeichert", async () => {
+  assert.equal((await emp("POST", "/api/me/settings", { theme: "light" })).status, 200);
+  assert.equal((await emp("GET", "/api/bootstrap")).body.me.theme, "light");
+  assert.equal((await emp("POST", "/api/me/settings", { theme: "neon" })).status, 400);
+});

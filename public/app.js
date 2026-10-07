@@ -61,13 +61,14 @@
   const isWorkday = (d) => { const w = d.getDay(); return w !== 0 && w !== 6 && !holidayName(iso(d)); };
   const ALL_WD = [1, 2, 3, 4, 5];
   const empDays = (e) => Array.isArray(e && e.tage) && e.tage.length ? e.tage.map(Number) : ALL_WD;
+  const isWorkdayFor = (e, d) => d.getDay() !== 0 && !holidayName(iso(d)) && empDays(e).includes(d.getDay());
 
   function workdays(a, year) {
     if (!a.von || !a.bis) return 0;
     let d = parse(a.von); const end = parse(a.bis); let n = 0;
-    const days = empDays(empById(a.mitarbeiterId));
+    const emp = empById(a.mitarbeiterId);
     while (d <= end) {
-      if ((year == null || d.getFullYear() === year) && isWorkday(d) && days.includes(d.getDay())) n++;
+      if ((year == null || d.getFullYear() === year) && isWorkdayFor(emp, d)) n++;
       d.setDate(d.getDate() + 1);
     }
     if (a.halberTag && n > 0) n -= 0.5;
@@ -77,7 +78,7 @@
   // ---------- Zustand ----------
   let data = null;
   const ui = {
-    tab: store.get("tr-tab") || "overview", unit: store.get("tr-unit") === "h" ? "h" : "pct", calMode: store.get("tr-calmode") === "time" ? "time" : "abs",
+    tab: store.get("tr-tab") || "overview", tmView: store.get("tr-tmview") === "list" ? "list" : "cal", tmMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1), unit: store.get("tr-unit") === "h" ? "h" : "pct", calMode: store.get("tr-calmode") === "time" ? "time" : "abs",
     calProj: "", projSel: null, year: new Date().getFullYear(), calMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   };
 
@@ -97,17 +98,20 @@
   const range = (a) => a.von === a.bis ? de(a.von) : `${de(a.von)} – ${de(a.bis)}`;
   const overlapsYear = (a, y) => a.von <= `${y}-12-31` && a.bis >= `${y}-01-01`;
   const projColor = (p) => p ? PCOL[(Number.isInteger(p.farbe) ? p.farbe : 0) % PCOL.length] : "var(--muted)";
-  const sortedProjects = (all) => data.projects.filter(p => all || p.status !== "abgeschlossen")
-    .sort((a, b) => (a.status === "abgeschlossen") - (b.status === "abgeschlossen") || (a.name || "").localeCompare(b.name || "", "de"));
+  // Gebucht werden kann nur auf laufende, nicht archivierte Projekte
+  const bookableP = (p) => p.status !== "abgeschlossen" && !p.archiviert;
+  const sortedProjects = (all) => data.projects.filter(p => all || bookableP(p))
+    .sort((a, b) => (!!a.archiviert - !!b.archiviert) || (a.status === "abgeschlossen") - (b.status === "abgeschlossen") || (a.name || "").localeCompare(b.name || "", "de"));
   const budgetOf = (p) => (p.positions || []).reduce((s, x) => s + (Number(x.stunden) || 0), 0);
   const mayEditTime = (t) => can("times.manage") || (can("times.book") && t.mitarbeiterId === me().id);
   const mayEditAbs = (a) => can("absences.manage") || (can("absences.request") && a.mitarbeiterId === me().id && a.status === "beantragt");
 
   // Fortschritt: grün bis 79 %, gelb ab 80 %, rot über 100 %
-  function progCls(booked, budget) { if (!budget) return booked ? "bad" : "none"; const r = booked / budget; return r > 1 ? "bad" : r >= 0.8 ? "warn" : "ok"; }
+  function progCls(booked, budget) { if (!budget) return "none"; const r = booked / budget; return r > 1 ? "bad" : r >= 0.8 ? "warn" : "ok"; }
   function progText(booked, budget, unit = ui.unit) {
+    if (!budget) return `${fmtH(booked)} h`;
     if (unit === "h") return `${fmtH(booked)} / ${fmtH(budget)} h`;
-    return budget ? `${Math.round(booked / budget * 100)} %` : "–";
+    return `${Math.round(booked / budget * 100)} %`;
   }
   const progTitle = (booked, budget) => `${fmtH(booked)} h von ${fmtH(budget)} h gebucht` + (budget ? ` (${Math.round(booked / budget * 100)} %)` : "");
   const progBar = (booked, budget, cls) => `<div class="bar" title="${esc(progTitle(booked, budget))}"><span class="${cls || progCls(booked, budget)}" style="width:${budget ? Math.min(booked / budget, 1) * 100 : booked ? 100 : 0}%"></span></div>`;
@@ -123,7 +127,7 @@
     if (!res.ok) throw new Error(out.error || "Das hat nicht geklappt. Bitte erneut versuchen.");
     return out;
   }
-  async function refresh() { data = await api("GET", "/api/bootstrap"); render(); }
+  async function refresh() { data = await api("GET", "/api/bootstrap"); if (data.me.theme) window.trTheme.set(data.me.theme); render(); }
 
   function toast(msg) {
     const root = $("#toast-root");
@@ -163,6 +167,7 @@
       { id: "time", label: can("times.view_all") ? "Zeiterfassung" : "Meine Stunden", show: can("times.book") || can("times.view_all") },
       { id: "absences", label: can("absences.view_all") ? "Abwesenheiten" : "Meine Abwesenheiten", show: can("absences.request") || can("absences.view_all") },
       { id: "calendar", label: "Kalender", show: true },
+      { id: "stats", label: "Statistiken", show: true },
       { id: "team", label: isAdmin() ? "Benutzer & Rollen" : "Mitarbeiter", show: isAdmin() || can("employees.view") },
     ].filter(t => t.show);
   }
@@ -174,7 +179,7 @@
     if (!list.some(t => t.id === ui.tab)) ui.tab = "overview";
     $("#tabs").innerHTML = list.map(t => `<button role="tab" data-tab="${t.id}" aria-selected="${t.id === ui.tab}">${esc(t.label)}</button>`).join("");
     $$("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
-    ["overview", "projects", "time", "absences", "calendar", "team"].forEach(v => $("#v-" + v).hidden = v !== ui.tab);
+    ["overview", "projects", "time", "absences", "calendar", "stats", "team"].forEach(v => $("#v-" + v).hidden = v !== ui.tab);
     $("#me-avatar").textContent = initials(me()).toUpperCase();
     $("#me-name").textContent = fullName(me());
     $("#me-role").textContent = isAdmin() ? "Administrator" : me().roleName;
@@ -182,7 +187,7 @@
     $("#btn-add-abs").hidden = !(can("absences.request") || can("absences.manage"));
     $("#btn-add-abs").textContent = can("absences.manage") ? "Abwesenheit eintragen" : "Abwesenheit beantragen";
     $$(".unit-seg button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.unit === ui.unit)));
-    ({ overview: renderOverview, projects: renderProjects, time: renderTime, absences: renderAbsences, calendar: renderCalendar, team: renderTeam })[ui.tab]();
+    ({ overview: renderOverview, projects: renderProjects, time: renderTime, absences: renderAbsences, calendar: renderCalendar, stats: renderStats, team: renderTeam })[ui.tab]();
   }
 
   // ---------- Übersicht ----------
@@ -203,13 +208,14 @@
   function projCard(p) {
     const budget = budgetOf(p), booked = Number(p.gebucht) || 0, cls = progCls(booked, budget);
     return `<div class="proj" role="button" tabindex="0" aria-pressed="${ui.tab === "projects" && p.id === ui.projSel}" data-proj="${esc(p.id)}">
-      <div class="proj-top"><div style="min-width:0"><div class="proj-name"><span class="dot" style="background:${projColor(p)};margin-right:8px"></span>${esc(p.name || "Ohne Namen")}</div><div class="muted" style="font-size:.84rem">${esc([p.kunde, p.nummer].filter(Boolean).join(" · ") || "Ohne Kunde")}</div></div>
-        ${p.status === "abgeschlossen" ? `<span class="pill neutral">Abgeschlossen</span>` : ""}</div>
-      <div class="proj-big"><span class="pct big ${cls}" title="${esc(progTitle(booked, budget))}">${progText(booked, budget)}</span><span class="muted" style="font-size:.82rem">${ui.unit === "pct" ? `${fmtH(booked)} / ${fmtH(budget)} h` : budget ? `${Math.round(booked / budget * 100)} %` : ""}</span></div>
+      <div class="proj-top"><div style="min-width:0"><div class="proj-name"><span class="dot" style="background:${projColor(p)};margin-right:8px"></span>${esc(p.name || "Ohne Namen")}</div><div class="muted" style="font-size:.84rem">${esc([p.kunde, p.nummer].filter(Boolean).join(" · ") || (p.intern ? "Internes Projekt" : "Ohne Kunde"))}</div></div>
+        <div class="chips" style="justify-content:flex-end">${projBadges(p)}</div></div>
+      <div class="proj-big"><span class="pct big ${cls}" title="${esc(progTitle(booked, budget))}">${progText(booked, budget)}</span><span class="muted" style="font-size:.82rem">${!budget ? "ohne Stundenbudget" : ui.unit === "pct" ? `${fmtH(booked)} / ${fmtH(budget)} h` : `${Math.round(booked / budget * 100)} %`}</span></div>
       ${progBar(booked, budget, cls)}
       <div class="pos-list">${(p.positions || []).map(x => { const b = Number(x.gebucht) || 0, s = Number(x.stunden) || 0, c = progCls(b, s); return `<div class="pos-row"><span>${esc(x.name)}</span><span class="val pct ${c}">${progText(b, s)}</span>${progBar(b, s, c)}</div>`; }).join("") || `<span class="muted" style="font-size:.84rem">Keine Positionen festgelegt.</span>`}</div>
     </div>`;
   }
+  const projBadges = (p) => (p.intern ? `<span class="pill neutral">Intern</span>` : "") + (p.archiviert ? `<span class="pill neutral">Archiviert</span>` : p.status === "abgeschlossen" ? `<span class="pill neutral">Abgeschlossen</span>` : "");
   function bindProjCards(root) {
     $$("[data-proj]", root).forEach(el => {
       const go = () => { ui.projSel = el.dataset.proj; if (ui.tab !== "projects") setTab("projects"); else renderProjects(); };
@@ -226,8 +232,9 @@
     const vac = vacationFor(me(), y);
     const stats = [];
     if (can("projects.view")) {
-      const act = data.projects.filter(p => p.status !== "abgeschlossen");
-      const bk = act.reduce((s, p) => s + (Number(p.gebucht) || 0), 0), bu = act.reduce((s, p) => s + budgetOf(p), 0);
+      const act = data.projects.filter(bookableP);
+      const withBudget = act.filter(p => budgetOf(p) > 0);
+      const bk = withBudget.reduce((s, p) => s + (Number(p.gebucht) || 0), 0), bu = withBudget.reduce((s, p) => s + budgetOf(p), 0);
       stats.push({ k: "Laufende Projekte", v: act.length, s: `${fmtH(bk)} von ${fmtH(bu)} h gebucht` });
     }
     let awayToday = [], open = [];
@@ -285,7 +292,8 @@
   function renderProjects() {
     const st = $("#pj-status").value;
     const all = sortedProjects(true);
-    const projs = all.filter(p => !st || (p.status || "aktiv") === st);
+    const FILTERS = { aktiv: p => !p.archiviert && p.status !== "abgeschlossen", intern: p => !p.archiviert && p.intern, abgeschlossen: p => !p.archiviert && p.status === "abgeschlossen", archiviert: p => p.archiviert };
+    const projs = all.filter(p => !st || (FILTERS[st] || (() => true))(p));
     if (!projs.some(p => p.id === ui.projSel)) ui.projSel = (projs[0] || {}).id || null;
     $("#btn-add-proj").hidden = !can("projects.manage");
     const box = $("#pj-list");
@@ -306,8 +314,9 @@
         <div style="min-width:0"><span class="eyebrow">Projektstand</span><h2><span class="dot" style="background:${projColor(p)};margin-right:8px;vertical-align:2px"></span>${esc(p.name || "Ohne Namen")}</h2>
           <div class="muted" style="font-size:.88rem">${esc([p.kunde, p.nummer, p.start || p.ende ? `${de(p.start)} – ${de(p.ende)}` : ""].filter(Boolean).join(" · "))}</div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          ${can("projects.manage") ? `<button class="small" id="rep-edit">Projekt bearbeiten</button>` : ""}
-          ${(can("times.book") || can("times.manage")) && p.status !== "abgeschlossen" ? `<button class="small primary" id="rep-add">Zeit buchen</button>` : ""}
+          ${projBadges(p)}
+          ${can("projects.manage") ? `<button class="small" id="rep-arch">${p.archiviert ? "Wiederherstellen" : "Archivieren"}</button><button class="small" id="rep-edit">Projekt bearbeiten</button>` : ""}
+          ${(can("times.book") || can("times.manage")) && bookableP(p) ? `<button class="small primary" id="rep-add">Zeit buchen</button>` : ""}
         </div>
       </div>
       <div class="minis">
@@ -330,9 +339,59 @@
         ${tms.length ? [...tms].sort((a, b) => b.datum.localeCompare(a.datum)).map(t => `<tr class="click" data-time="${esc(t.id)}"><td style="white-space:nowrap">${WD[parse(t.datum).getDay()]}, ${de(t.datum)}</td><td>${esc(fullName(empById(t.mitarbeiterId)))}</td><td>${esc((posById(p, t.positionId) || {}).name || "–")}</td><td class="muted">${esc(t.beschreibung || "–")}</td><td class="num"><strong>${fmtH(Number(t.stunden) || 0)}</strong></td></tr>`).join("") : `<tr><td colspan="5" class="empty">Noch keine Zeiten erfasst.</td></tr>`}
       </tbody></table></div>` : ""}`;
     const ed = $("#rep-edit"); if (ed) ed.onclick = () => openProj(p);
+    const ar = $("#rep-arch"); if (ar) ar.onclick = async () => {
+      ar.disabled = true;
+      try { await api("PUT", `/api/projects/${p.id}`, { ...p, archiviert: !p.archiviert }); await refresh(); toast(p.archiviert ? "Projekt wiederhergestellt" : "Projekt archiviert"); }
+      catch (e) { toast(e.message); ar.disabled = false; }
+    };
     const ad = $("#rep-add"); if (ad) ad.onclick = () => openTime(null, { projektId: p.id });
     $$("tr[data-time]", rep).forEach(r => r.onclick = () => openTime(data.times.find(t => t.id === r.dataset.time)));
   }
+
+  // ---------- Zeiterfassung ----------
+  // ---------- Soll/Ist-Berechnung (Zeiterfassung, Statistiken, Report) ----------
+  // Tagessoll = Wochenstunden ÷ Anzahl Diensttage. Urlaub, Krankheit und Fortbildung (genehmigt) gelten als erfüllt.
+  const CREDIT = ["urlaub", "krank", "fortbildung"];
+  const dailySoll = (e) => Number(e && e.stunden) ? Number(e.stunden) / empDays(e).length : 0;
+  // Soll zählt ab Eintritt, frühestens ab "Überstunden zählen ab" bzw. Anlage des Kontos (davor gab es keine Buchungen)
+  const trackStart = (e) => { const a = e.erfassungAb || String(e.createdAt || "").slice(0, 10); return (e.eintritt || "") > a ? e.eintritt : a; };
+  const employed = (e, s) => s >= trackStart(e) && (!e.austritt || s <= e.austritt);
+  let hIdxFor = null, hIdx = null;
+  function hoursOn(empId, day) {
+    if (hIdxFor !== data) { hIdx = new Map(); data.times.forEach(t => { const k = t.mitarbeiterId + "|" + t.datum; hIdx.set(k, (hIdx.get(k) || 0) + (Number(t.stunden) || 0)); }); hIdxFor = data; }
+    return hIdx.get(empId + "|" + day) || 0;
+  }
+  function dayInfo(e, s) {
+    const d = parse(s), hol = holidayName(s);
+    const sched = employed(e, s) && isWorkdayFor(e, d);
+    const abs = data.absences.find(a => a.mitarbeiterId === e.id && a.status !== "abgelehnt" && a.von <= s && a.bis >= s);
+    const approved = abs && abs.status === "genehmigt";
+    let soll = sched ? dailySoll(e) : 0;
+    if (sched && approved && CREDIT.includes(abs.art)) soll = abs.halberTag && s === abs.bis ? soll / 2 : 0;
+    return { d, hol, sched, abs, soll, ist: hoursOn(e.id, s), past: s <= todayIso() };
+  }
+  const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return iso(d); };
+  const minS = (a, b) => a < b ? a : b;
+  function periodStats(e, from, to) {
+    let soll = 0, ist = 0, present = 0;
+    const st = trackStart(e);
+    for (let s = from; s <= to; s = addDays(s, 1)) { const x = dayInfo(e, s); soll += x.soll; if (s >= st) ist += x.ist; if (x.ist > 0) present++; }
+    return { soll, ist, saldo: ist - soll, present };
+  }
+  // Statistik eines Jahres bis heute bzw. bis "upto". overtime = Saldo seit Erfassungsbeginn + Übertrag (läuft über Jahre weiter).
+  function yearStats(e, y, upto) {
+    const to = minS(upto || todayIso(), `${y}-12-31`), from = `${y}-01-01`;
+    const ps = to >= from ? periodStats(e, from, to) : { soll: 0, ist: 0, saldo: 0, present: 0 };
+    const st = trackStart(e) || from;
+    const earlier = st < from ? periodStats(e, st, addDays(from, -1)).saldo : 0;
+    ps.overtime = earlier + ps.saldo + (Number(e.uebertrag) || 0);
+    const v = vacationFor(e, y);
+    const sickCount = data.absences.filter(a => a.mitarbeiterId === e.id && a.art === "krank" && a.status !== "abgelehnt" && overlapsYear(a, y)).length;
+    return { ...ps, vac: v, sickCount };
+  }
+  const signH = (n) => (n > 0.004 ? "+" : n < -0.004 ? "−" : "±") + fmtH(Math.abs(n)) + " h";
+  const saldoCls = (n) => n > 0.004 ? "ok" : n < -0.004 ? "bad" : "none";
+  const ownOr = (perm, e) => e.id === me().id || can(perm);
 
   // ---------- Zeiterfassung ----------
   function filteredTimes() {
@@ -341,6 +400,10 @@
       .sort((a, b) => b.datum.localeCompare(a.datum) || String(b.createdAt).localeCompare(String(a.createdAt)));
   }
   function renderTime() {
+    const calView = ui.tmView === "cal";
+    $$("#tm-view button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === ui.tmView)));
+    $("#tm-calnav").hidden = !calView; $("#tm-cal").hidden = !calView;
+    $("#tm-month").hidden = calView; $("#tm-listbox").hidden = calView; $("#tm-export").hidden = calView;
     const mSel = $("#tm-month"), eSel = $("#tm-emp"), pSel = $("#tm-proj");
     const months = [...new Set([todayIso().slice(0, 7), ...data.times.map(t => t.datum.slice(0, 7))])].sort().reverse();
     const curM = mSel.dataset.init ? mSel.value : todayIso().slice(0, 7); mSel.dataset.init = "1";
@@ -349,11 +412,12 @@
     const seeAll = can("times.view_all");
     eSel.hidden = !seeAll;
     const curE = eSel.value;
-    eSel.innerHTML = `<option value="">Alle Mitarbeiter</option>` + [...data.users].sort(sortEmp).map(e => `<option value="${esc(e.id)}">${esc(fullName(e))}</option>`).join("");
-    eSel.value = data.users.some(e => e.id === curE) ? curE : "";
+    eSel.innerHTML = (calView ? "" : `<option value="">Alle Mitarbeiter</option>`) + [...data.users].sort(sortEmp).map(e => `<option value="${esc(e.id)}">${esc(fullName(e))}</option>`).join("");
+    eSel.value = data.users.some(e => e.id === curE) ? curE : calView ? me().id : "";
     const curP = pSel.value;
     pSel.innerHTML = `<option value="">Alle Projekte</option>` + sortedProjects(true).map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
     pSel.value = projById(curP) ? curP : "";
+    if (calView) return renderTimeCal(empById(eSel.value) || me(), pSel.value);
     const rows = filteredTimes();
     const total = sumH(rows);
     $("#tm-sum").innerHTML = `<span>Einträge <strong>${rows.length}</strong></span><span>Summe <strong>${fmtH(total)} h</strong></span>`;
@@ -364,6 +428,181 @@
       : `<tr><td colspan="7" class="empty">Für diese Auswahl sind keine Stunden erfasst.</td></tr>`;
     $$("#tm-body tr[data-time]").forEach(r => r.onclick = () => openTime(data.times.find(t => t.id === r.dataset.time)));
   }
+
+  // Monatskalender eines Mitarbeiters: Stunden je Tag, Soll, Abwesenheiten. Klick auf einen Tag bucht Zeit.
+  function renderTimeCal(e, pf) {
+    const m = ui.tmMonth, y = m.getFullYear(), mo = m.getMonth();
+    $("#tm-caltitle").textContent = `${MONTHS[mo]} ${y}`;
+    const days = new Date(y, mo + 1, 0).getDate(), t = todayIso();
+    const first = `${y}-${pad(mo + 1)}-01`, last = `${y}-${pad(mo + 1)}-${pad(days)}`;
+    const tms = data.times.filter(x => x.mitarbeiterId === e.id && x.datum >= first && x.datum <= last && (!pf || x.projektId === pf));
+    const lead = (new Date(y, mo, 1).getDay() + 6) % 7;
+    let html = `<div class="mcal">${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(d => `<div class="mcal-h">${d}</div>`).join("")}`;
+    for (let i = 0; i < lead; i++) html += `<div class="mday blank"></div>`;
+    let sollSum = 0, istSum = 0, sollMonth = 0;
+    for (let i = 1; i <= days; i++) {
+      const s = `${y}-${pad(mo + 1)}-${pad(i)}`, x = dayInfo(e, s);
+      const ist = pf ? sumH(tms.filter(z => z.datum === s)) : x.ist;
+      sollMonth += x.soll;
+      if (x.past && s >= trackStart(e)) { sollSum += x.soll; istSum += ist; }
+      let cls = x.sched ? "" : "off";
+      if (!pf) {
+        if (ist > 0) cls += !x.soll || ist >= x.soll - 0.01 ? " s-ok" : " s-under";
+        else if (x.soll > 0 && x.past && s < t) cls += " s-miss";
+      } else if (ist > 0) cls += " s-ok";
+      const tt = x.abs ? TYPES[x.abs.art] || TYPES.sonstiges : null;
+      const label = x.hol || (tt ? tt.label + (x.abs.status === "beantragt" ? " (beantragt)" : "") : "");
+      html += `<button type="button" class="mday ${cls} ${s === t ? "today" : ""}" data-day="${s}" title="${esc(`${WD[x.d.getDay()]}, ${de(s)}${label ? " · " + label : ""} · ${fmtH(ist)} h gebucht${x.soll ? `, Soll ${fmtH(x.soll)} h` : ""}`)}">
+        <span class="mday-top"><span class="mday-n">${i}</span>${tt ? `<span class="dot" style="background:${tt.color}"></span>` : ""}</span>
+        <span class="mday-l">${esc(label)}</span>
+        <span class="mday-h">${ist ? fmtH(ist) + " h" : ""}</span>
+        <span class="mday-s">${x.soll && !pf ? "Soll " + fmtH(x.soll) : ""}</span></button>`;
+    }
+    html += `</div>`;
+    $("#tm-cal").innerHTML = html + `<div class="legend" style="margin-top:12px">${[["var(--ok)", "Tagessoll erreicht"], ["var(--warn)", "Unter Tagessoll"], ["var(--bad)", "Arbeitstag ohne Buchung"]].map(([c, l]) => `<span><span class="dot" style="background:${c}"></span>${l}</span>`).join("")}<span>Tippe auf einen Tag, um Zeit zu buchen.</span></div>`;
+    const sal = istSum - sollSum;
+    $("#tm-sum").innerHTML = pf ? `<span>${esc(fullName(e))}</span><span>Gebucht auf Projekt <strong>${fmtH(sumH(tms))} h</strong></span>`
+      : `<span>${esc(fullName(e))}</span><span>Gebucht <strong>${fmtH(sumH(tms))} h</strong></span><span>Soll bis heute <strong>${fmtH(sollSum)} h</strong></span><span>Saldo <strong class="pct ${saldoCls(sal)}">${signH(sal)}</strong></span><span>Soll ganzer Monat <strong>${fmtH(sollMonth)} h</strong></span>`;
+    $$("#tm-cal [data-day]").forEach(b => b.onclick = () => openDay(e, b.dataset.day, pf));
+  }
+  $$("#tm-view button").forEach(b => b.onclick = () => { ui.tmView = b.dataset.view; store.set("tr-tmview", ui.tmView); renderTime(); });
+  $("#tm-prev").onclick = () => { ui.tmMonth = new Date(ui.tmMonth.getFullYear(), ui.tmMonth.getMonth() - 1, 1); renderTime(); };
+  $("#tm-next").onclick = () => { ui.tmMonth = new Date(ui.tmMonth.getFullYear(), ui.tmMonth.getMonth() + 1, 1); renderTime(); };
+  $("#tm-today").onclick = () => { const d = new Date(); ui.tmMonth = new Date(d.getFullYear(), d.getMonth(), 1); renderTime(); };
+  $("#tm-report").onclick = () => {
+    const calView = ui.tmView === "cal";
+    const month = calView ? iso(ui.tmMonth).slice(0, 7) : ($("#tm-month").value || todayIso().slice(0, 7));
+    openReport({ empId: $("#tm-emp").value || me().id, month });
+  };
+
+  // ---------- Statistiken ----------
+  const reportPeople = () => can("times.view_all") || can("absences.view_all") ? activeEmps() : [me()];
+  function renderStats() {
+    const ySel = $("#st-year");
+    const ys = new Set([new Date().getFullYear()]);
+    [...data.times.map(t => t.datum), ...data.absences.map(a => a.von)].forEach(s => s && ys.add(Number(s.slice(0, 4))));
+    const list = [...ys].sort((a, b) => b - a);
+    const cur = ySel.dataset.init ? Number(ySel.value) : new Date().getFullYear(); ySel.dataset.init = "1";
+    ySel.innerHTML = list.map(y => `<option value="${y}">${y}</option>`).join("");
+    ySel.value = String(list.includes(cur) ? cur : list[0]);
+    const y = Number(ySel.value), thisMonth = todayIso().slice(0, 7), isCur = y === new Date().getFullYear();
+    const mine = yearStats(me(), y);
+    $("#st-cards").innerHTML = [
+      { k: "Meine Überstunden", v: `<span class="pct ${saldoCls(mine.overtime)}">${signH(mine.overtime)}</span>`, s: `${y}: ${fmtH(mine.ist)} h gebucht von ${fmtH(mine.soll)} h Soll` },
+      { k: `Mein Resturlaub ${y}`, v: fmtDays(mine.vac.rest), s: `${fmtDays(mine.vac.taken)} genommen · ${fmtDays(mine.vac.planned)} beantragt · Anspruch ${fmtDays(mine.vac.anspruch)}` },
+      { k: `Meine Krankheitstage ${y}`, v: fmtDays(mine.vac.sick), s: `${mine.sickCount} Krankmeldung${mine.sickCount === 1 ? "" : "en"}` },
+      { k: `Anwesenheitstage ${y}`, v: mine.present, s: "Tage mit gebuchten Stunden" },
+    ].map(x => `<div class="stat"><span class="eyebrow">${esc(x.k)}</span><span class="big">${x.v}</span><span class="sub">${esc(x.s)}</span></div>`).join("");
+    const rows = reportPeople();
+    $("#st-body").innerHTML = rows.map(e => {
+      const st = yearStats(e, y), h = ownOr("times.view_all", e), a = ownOr("absences.view_all", e);
+      const dash = `<span class="muted">–</span>`;
+      const monthH = isCur ? data.times.filter(t => t.mitarbeiterId === e.id && t.datum.startsWith(thisMonth)).reduce((s, t) => s + (Number(t.stunden) || 0), 0) : null;
+      const restCls = st.vac.rest < 0 ? "bad" : st.vac.rest <= 3 ? "warn" : "neutral";
+      return `<tr><td class="name">${esc(fullName(e))}<div class="muted" style="font-size:.8rem;font-weight:400">${esc(e.position || "")}${Number(e.stunden) ? ` · ${fmtH(Number(e.stunden))} h/Wo.` : ""}</div></td>
+        <td class="num">${h && a ? fmtH(st.soll) + " h" : dash}</td><td class="num">${h ? fmtH(st.ist) + " h" : dash}</td>
+        <td class="num">${h && a ? `<strong class="pct ${saldoCls(st.overtime)}">${signH(st.overtime)}</strong>` : dash}</td>
+        <td class="num">${h && monthH !== null ? fmtH(monthH) + " h" : dash}</td>
+        <td class="num">${a ? fmtDays(st.vac.taken) : dash}</td><td class="num">${a ? fmtDays(st.vac.planned) : dash}</td>
+        <td class="num">${a ? `<span class="pill ${restCls}">${fmtDays(st.vac.rest)}</span>` : dash}</td>
+        <td class="num">${a ? fmtDays(st.vac.sick) : dash}</td><td class="num">${a ? st.sickCount : dash}</td>
+        <td class="actions"><button class="small" data-report="${esc(e.id)}">Report</button></td></tr>`;
+    }).join("");
+    $("#st-note").textContent = `Soll = Wochenstunden ÷ Diensttage je Arbeitstag, ab Eintritt bis heute${isCur ? "" : " bzw. Jahresende"}. Feiertage NRW zählen nicht, genehmigter Urlaub, Krankheit und Fortbildung gelten als erfüllt. Ist = gebuchte Stunden. Überstunden = Ist − Soll seit Erfassungsbeginn (Konto-Anlage bzw. „Überstunden zählen ab“) plus Übertrag, bis heute bzw. Jahresende.`;
+    $$("#st-body [data-report]").forEach(b => b.onclick = () => openReport({ empId: b.dataset.report, month: isCur ? thisMonth : `${y}-12` }));
+  }
+  $("#st-year").addEventListener("input", renderStats);
+  $("#st-report").onclick = () => openReport({ empId: me().id, month: todayIso().slice(0, 7) });
+
+  // ---------- Mitarbeiter-Report (Druckansicht → "Als PDF speichern") ----------
+  function reportPage(e, month) {
+    const [y, mo] = month.split("-").map(Number);
+    const days = new Date(y, mo, 0).getDate(), first = `${month}-01`, last = `${month}-${pad(days)}`, t = todayIso();
+    const seeH = ownOr("times.view_all", e), seeA = ownOr("absences.view_all", e);
+    const tms = seeH ? data.times.filter(x => x.mitarbeiterId === e.id && x.datum >= first && x.datum <= last) : [];
+    let sollSum = 0, istSum = 0, present = 0, rows = "";
+    const absDays = {};
+    for (let i = 1; i <= days; i++) {
+      const s = `${month}-${pad(i)}`, x = dayInfo(e, s), ist = seeH ? x.ist : 0;
+      const counted = s <= t;
+      if (counted) { sollSum += x.soll; if (s >= trackStart(e)) istSum += ist; }
+      if (ist > 0) present++;
+      const tt = seeA && x.abs ? TYPES[x.abs.art] || TYPES.sonstiges : null;
+      if (tt && x.sched) absDays[tt.label] = (absDays[tt.label] || 0) + (x.abs.halberTag && s === x.abs.bis ? 0.5 : 1);
+      let status = "";
+      if (!employed(e, s)) status = "–";
+      else if (x.hol) status = x.hol;
+      else if (tt) status = tt.label + (x.abs.status === "beantragt" ? " (beantragt)" : "");
+      else if (!x.sched) status = x.d.getDay() === 0 || x.d.getDay() === 6 ? "Wochenende" : "Kein Diensttag";
+      else if (ist > 0) status = "Anwesend";
+      else if (s < t) status = "Keine Buchung";
+      const acts = tms.filter(z => z.datum === s).map(z => { const p = projById(z.projektId); const pos = posById(p, z.positionId); return `${p ? p.name : "Gelöschtes Projekt"}${pos ? " · " + pos.name : ""} ${fmtH(Number(z.stunden) || 0)} h${z.beschreibung ? ` (${z.beschreibung})` : ""}`; });
+      const diff = counted && s >= trackStart(e) && (x.soll || ist) ? ist - x.soll : null;
+      rows += `<tr class="${x.sched ? "" : "rp-off"} ${status === "Keine Buchung" ? "rp-miss" : ""}"><td>${pad(i)}.${pad(mo)}.</td><td>${WD[x.d.getDay()]}</td><td>${esc(status)}</td><td class="num">${x.soll ? fmtH(x.soll) : ""}</td><td class="num"><strong>${ist ? fmtH(ist) : ""}</strong></td><td class="num ${diff > 0.004 ? "rp-plus" : diff < -0.004 ? "rp-minus" : ""}">${diff === null ? "" : signH(diff).replace(" h", "")}</td><td class="rp-acts">${esc(acts.join("; "))}</td></tr>`;
+    }
+    const byProj = {};
+    tms.forEach(z => { const p = projById(z.projektId), pos = posById(p, z.positionId); const k = `${p ? p.name : "Gelöschtes Projekt"}${pos ? " · " + pos.name : ""}`; byProj[k] = (byProj[k] || 0) + (Number(z.stunden) || 0); });
+    const ys = yearStats(e, y, minS(last, t));
+    const abs = seeA ? data.absences.filter(a => a.mitarbeiterId === e.id && a.von <= last && a.bis >= first).sort((a, b) => a.von.localeCompare(b.von)) : [];
+    const sal = istSum - sollSum;
+    const kpis = [
+      ["Soll" + (last > t && first <= t ? " bis heute" : ""), seeH && seeA ? fmtH(sollSum) + " h" : "–"],
+      ["Ist (gebucht)", seeH ? fmtH(istSum) + " h" : "–"],
+      ["Saldo Monat", seeH && seeA ? signH(sal) : "–"],
+      ["Überstunden gesamt", seeH && seeA ? signH(ys.overtime) : "–"],
+      ["Anwesenheitstage", seeH ? present : "–"],
+      ["Urlaub im Monat", seeA ? fmtDays(absDays.Urlaub || 0) + " Tg." : "–"],
+      ["Krank im Monat", seeA ? fmtDays(absDays.Krankheit || 0) + " Tg." : "–"],
+      [`Resturlaub ${y}`, seeA ? fmtDays(ys.vac.rest) + " Tg." : "–"],
+    ];
+    return `<section class="report-page">
+      <header class="rp-head"><div><img class="rp-logo" src="/logo-light.svg" alt="Trust Reels"><div class="rp-sub">Mitarbeiter-Report</div></div><div class="rp-month">${MONTHS[mo - 1]} ${y}</div></header>
+      <div class="rp-person"><strong>${esc(fullName(e))}</strong>${[e.position, e.abteilung].filter(Boolean).map(v => ` · ${esc(v)}`).join("")}${Number(e.stunden) ? ` · ${fmtH(Number(e.stunden))} h/Woche` : ""} · Diensttage ${empDays(e).map(i => WD[i]).join(", ")}</div>
+      <div class="rp-kpis">${kpis.map(([k, v]) => `<div><span>${esc(k)}</span><strong>${esc(String(v))}</strong></div>`).join("")}</div>
+      <table class="rp-table"><thead><tr><th>Datum</th><th>Tag</th><th>Status</th><th class="num">Soll</th><th class="num">Ist</th><th class="num">+/−</th><th>Tätigkeiten</th></tr></thead><tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="3">Summe${last > t && first <= t ? " (bis heute)" : ""}</td><td class="num">${fmtH(sollSum)}</td><td class="num">${fmtH(istSum)}</td><td class="num">${signH(sal).replace(" h", "")}</td><td></td></tr></tfoot></table>
+      <div class="rp-cols">
+        <div><h3>Stunden nach Projekt</h3>${Object.keys(byProj).length ? `<table class="rp-table">${Object.entries(byProj).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${fmtH(v)} h</td></tr>`).join("")}</table>` : `<p class="rp-muted">Keine Stunden gebucht.</p>`}</div>
+        <div><h3>Abwesenheiten</h3>${abs.length ? `<table class="rp-table">${abs.map(a => `<tr><td>${esc((TYPES[a.art] || TYPES.sonstiges).label)}</td><td>${range(a)}</td><td>${esc((STATUS[a.status] || {}).label || "")}</td></tr>`).join("")}</table>` : `<p class="rp-muted">${seeA ? "Keine Abwesenheiten." : "Keine Berechtigung."}</p>`}
+          <h3>Jahr ${y} bis ${de(minS(last, t))}</h3><table class="rp-table">
+            <tr><td>Urlaub genommen / beantragt</td><td class="num">${seeA ? `${fmtDays(ys.vac.taken)} / ${fmtDays(ys.vac.planned)} von ${fmtDays(ys.vac.anspruch)}` : "–"}</td></tr>
+            <tr><td>Krankheitstage</td><td class="num">${seeA ? `${fmtDays(ys.vac.sick)} (${ys.sickCount}× gemeldet)` : "–"}</td></tr>
+            <tr><td>Stunden gebucht</td><td class="num">${seeH ? fmtH(ys.ist) + " h" : "–"}</td></tr></table></div>
+      </div>
+      <footer class="rp-foot"><div class="rp-sign"><span>Datum, Unterschrift Mitarbeiter</span></div><div class="rp-sign"><span>Datum, Unterschrift Geschäftsführung</span></div></footer>
+      <div class="rp-meta">Erstellt am ${de(t)} von ${esc(fullName(me()))} · Soll = Wochenstunden ÷ Diensttage, Urlaub/Krankheit/Fortbildung gelten als erfüllt, Feiertage NRW.</div>
+    </section>`;
+  }
+  function closeReport() { const r = $("#report-root"); r.hidden = true; r.innerHTML = ""; document.removeEventListener("keydown", reportEsc); }
+  function reportEsc(ev) { if (ev.key === "Escape" && $("#drawer-root").children.length === 0) closeReport(); }
+  function openReport({ empId, month }) {
+    closeDrawer();
+    const people = reportPeople(), multi = people.length > 1;
+    const months = [...new Set([todayIso().slice(0, 7), ...data.times.map(t => t.datum.slice(0, 7)), ...data.absences.map(a => a.von.slice(0, 7))])];
+    for (let i = 1; i < 13; i++) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); months.push(iso(d).slice(0, 7)); }
+    const ms = [...new Set(months)].sort().reverse();
+    const root = $("#report-root"); root.hidden = false;
+    root.innerHTML = `<div class="report-bar">
+        <div class="filters" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><strong>Mitarbeiter-Report</strong>
+          <select id="rp-month" aria-label="Monat">${ms.map(m => `<option value="${m}">${monthLabel(m)}</option>`).join("")}</select>
+          <select id="rp-emp" aria-label="Mitarbeiter" ${multi ? "" : "hidden"}>${multi ? `<option value="">Alle Mitarbeiter</option>` : ""}${people.map(e => `<option value="${esc(e.id)}">${esc(fullName(e))}</option>`).join("")}</select></div>
+        <div style="display:flex;gap:8px"><button class="primary" id="rp-print">Als PDF speichern</button><button id="rp-close">Schließen</button></div>
+      </div><div id="rp-pages"></div><p class="report-hint">Tipp: Im Druckfenster als Ziel „Als PDF speichern“ wählen.</p>`;
+    const mSel = $("#rp-month"), eSel = $("#rp-emp");
+    mSel.value = ms.includes(month) ? month : ms[0];
+    eSel.value = people.some(e => e.id === empId) ? empId : people[0].id;
+    const draw = () => { const list = eSel.value ? [empById(eSel.value)] : people; $("#rp-pages").innerHTML = list.filter(Boolean).map(e => reportPage(e, mSel.value)).join(""); };
+    mSel.onchange = draw; eSel.onchange = draw; draw();
+    $("#rp-print").onclick = () => {
+      const name = eSel.value ? fullName(empById(eSel.value)) : "Team";
+      const old = document.title; document.title = `Mitarbeiter-Report ${name} ${mSel.value}`;
+      window.print(); setTimeout(() => document.title = old, 500);
+    };
+    $("#rp-close").onclick = closeReport;
+    document.addEventListener("keydown", reportEsc);
+    root.scrollTop = 0;
+  }
+
   ["#tm-month", "#tm-emp", "#tm-proj"].forEach(s => $(s).addEventListener("input", renderTime));
   function csv(rows) { return "﻿" + rows.map(r => r.map(v => { const s = String(v ?? ""); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(";")).join("\r\n"); }
   function download(name, text) {
@@ -579,6 +818,7 @@
     const self = !isNew && u.id === me().id;
     openDrawer(`
       <div><span class="eyebrow">${isNew ? "Neu" : "Benutzer"}</span><h2>${isNew ? "Benutzer anlegen" : esc(fullName(u))}</h2></div>
+      ${isNew ? "" : (() => { const y = new Date().getFullYear(), st = yearStats(u, y); return `<div class="minis"><div class="mini"><span class="k">Überstunden</span><span class="v pct ${saldoCls(st.overtime)}">${signH(st.overtime)}</span></div><div class="mini"><span class="k">Resturlaub</span><span class="v">${fmtDays(st.vac.rest)}</span></div><div class="mini"><span class="k">Krankheitstage</span><span class="v">${fmtDays(st.vac.sick)}</span></div></div><button type="button" class="small" id="u-report" style="align-self:flex-start">Mitarbeiter-Report öffnen</button>`; })()}
       <form id="f-user" novalidate autocomplete="off">
         <div class="section">
           <span class="subhead" style="margin:0">Zugang</span>
@@ -603,6 +843,8 @@
           <div class="row2"><label>Eintrittsdatum<input id="u-eintritt" type="date" value="${esc(u.eintritt)}"></label><label>Austrittsdatum<input id="u-austritt" type="date" value="${esc(u.austritt)}"></label></div>
           <div class="row2"><label>Wochenstunden<input id="u-stunden" type="number" min="0" max="80" step="0.5" value="${esc(u.stunden)}"></label><label>Urlaubstage pro Jahr<input id="u-urlaub" type="number" min="0" max="80" step="0.5" value="${esc(u.urlaub)}"></label></div>
           <fieldset class="wk"><legend>Diensttage</legend>${[1, 2, 3, 4, 5, 6].map(i => `<label class="chk"><input type="checkbox" value="${i}" ${empDays(u).includes(i) ? "checked" : ""}>${WD[i]}</label>`).join("")}</fieldset>
+          <div class="row2"><label>Überstunden zählen ab<input id="u-erfassung" type="date" value="${esc(u.erfassungAb)}"></label><label>Überstunden-Übertrag (h)<input id="u-uebertrag" type="number" step="0.25" value="${esc(u.uebertrag)}" placeholder="0"></label></div>
+          <div class="hint">Leer = ab Anlage des Kontos. Mit dem Übertrag gibst du Überstunden aus der Zeit vor der Software mit (negativ für Minusstunden).</div>
           <label>Notizen (nur für Admins sichtbar)<textarea id="u-notiz" rows="3">${esc(u.notiz)}</textarea></label>
         </div>
         <div class="err" id="u-err" hidden></div>
@@ -613,6 +855,7 @@
       </form>`, (d) => {
       const q = (s) => $(s, d);
       q("#u-status").value = u.status || "aktiv";
+      const ur = q("#u-report"); if (ur) ur.onclick = () => openReport({ empId: u.id, month: todayIso().slice(0, 7) });
       const roleSel = q("#u-role");
       roleSel.value = u.roleId && roleById(u.roleId) ? u.roleId : "";
       const startRole = roleById(roleSel.value);
@@ -646,7 +889,7 @@
           roleId: roleSel.value || null, ...rights.read(),
           vorname: g("#u-vorname"), nachname: g("#u-nachname"), position: g("#u-position"), abteilung: g("#u-abteilung"),
           email: g("#u-email"), telefon: g("#u-telefon"), eintritt: g("#u-eintritt"), austritt: g("#u-austritt"),
-          stunden: g("#u-stunden"), urlaub: g("#u-urlaub"), notiz: g("#u-notiz"), tage: $$(".wk input:checked", d).map(x => Number(x.value)),
+          stunden: g("#u-stunden"), urlaub: g("#u-urlaub"), erfassungAb: g("#u-erfassung"), uebertrag: g("#u-uebertrag"), notiz: g("#u-notiz"), tage: $$(".wk input:checked", d).map(x => Number(x.value)),
         };
         if (isNew && !body.password) { showErr(d, "#u-err", "Bitte ein Passwort festlegen oder generieren."); return; }
         submitWith(ev.submitter, d, "#u-err", async () => {
@@ -695,6 +938,8 @@
       <div class="section"><span class="subhead" style="margin:0">Deine Rechte</span>
         <div class="chips">${isAdmin() ? `<span class="chip admin">Administrator – alle Rechte</span>` : m.permissions.map(k => `<span class="chip">${esc(permLabel(k))}</span>`).join("") || `<span class="muted">Keine besonderen Rechte</span>`}</div>
         <span class="muted" style="font-size:.82rem">Rechte vergibt die Geschäftsführung.</span></div>
+      <div class="section"><span class="subhead" style="margin:0">Darstellung</span>
+        <div class="theme-pick" id="theme-pick">${[["dark", "Dunkel", "#000"], ["light", "Hell", "#f2f2f7"], ["system", "Wie Gerät", "linear-gradient(90deg,#000 50%,#f2f2f7 50%)"]].map(([k, l, c]) => `<button type="button" data-theme-opt="${k}" aria-pressed="${window.trTheme.get() === k}"><span class="sw" style="background:${c}"></span>${l}</button>`).join("")}</div></div>
       <form id="f-pw" novalidate class="section">
         <span class="subhead" style="margin:0">Passwort ändern</span>
         <label>Aktuelles Passwort<input id="pw-cur" type="password" autocomplete="current-password"></label>
@@ -705,6 +950,12 @@
         <div class="drawer-foot"><span></span><div class="right"><button type="button" id="pw-close">Schließen</button><button class="primary" type="submit">Passwort ändern</button></div></div>
       </form>`, (d) => {
       $("#pw-close", d).onclick = closeDrawer;
+      $$("[data-theme-opt]", d).forEach(b => b.onclick = async () => {
+        const theme = b.dataset.themeOpt;
+        window.trTheme.set(theme);
+        $$("[data-theme-opt]", d).forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        try { await api("POST", "/api/me/settings", { theme }); data.me.theme = theme; } catch (e) { toast(e.message); }
+      });
       $("#f-pw", d).onsubmit = (ev) => {
         ev.preventDefault();
         const cur = $("#pw-cur", d).value, nw = $("#pw-new", d).value, rep = $("#pw-rep", d).value;
@@ -724,10 +975,15 @@
       <div><span class="eyebrow">${isNew ? "Neu" : "Projekt"}</span><h2>${isNew ? "Projekt anlegen" : esc(p.name || "Projekt")}</h2></div>
       <form id="f-proj" novalidate>
         <label>Projektname<input id="p-name" value="${esc(p.name)}"></label>
-        <div class="row2"><label>Kunde<input id="p-kunde" value="${esc(p.kunde)}"></label><label>Projektnummer<input id="p-nr" value="${esc(p.nummer)}"></label></div>
+        <div class="row2"><label>Kunde<input id="p-kunde" value="${esc(p.kunde)}" placeholder="${p.intern ? "bei internen Projekten leer" : ""}"></label><label>Projektnummer<input id="p-nr" value="${esc(p.nummer)}"></label></div>
         <div class="row2"><label>Start<input id="p-start" type="date" value="${esc(p.start)}"></label><label>Ende<input id="p-ende" type="date" value="${esc(p.ende)}"></label></div>
         <div class="row2"><label>Status<select id="p-status"><option value="aktiv">Läuft</option><option value="abgeschlossen">Abgeschlossen</option></select></label>
           <label>Farbe<select id="p-farbe">${PCOL_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label></div>
+        <div class="section">
+          <span class="subhead" style="margin:0">Projektoptionen</span>
+          <label class="perm"><input type="checkbox" id="p-intern" ${p.intern ? "checked" : ""}><span><strong>Internes Projekt</strong><br><span class="muted">Für Zeiten ohne Kunde, z. B. Büro, Akquise, Weiterbildung. Positionen und Stundenbudget sind optional.</span></span></label>
+          <label class="perm"><input type="checkbox" id="p-arch" ${p.archiviert ? "checked" : ""}><span><strong>Archivieren</strong><br><span class="muted">Projekt verschwindet aus Übersicht und Zeiterfassung. Gebuchte Stunden bleiben erhalten, im Filter „Archiv“ jederzeit wieder auffindbar.</span></span></label>
+        </div>
         <div class="section">
           <span class="subhead" style="margin:0">Positionen &amp; geplante Stunden</span>
           <div class="pos-edit muted" style="font-size:.76rem"><span>Position</span><span>Stunden</span><span></span></div>
@@ -773,7 +1029,7 @@
         const positions = $$(".pos-edit", list).map(r => ({ id: r.dataset.id, name: $("[data-n]", r).value.trim(), stunden: $("[data-h]", r).value }))
           .filter(x => x.id || x.name || x.stunden);
         const body = { name: g("#p-name"), kunde: g("#p-kunde"), nummer: g("#p-nr"), start: g("#p-start"), ende: g("#p-ende"), status: q("#p-status").value,
-          farbe: Number(q("#p-farbe").value), notiz: g("#p-notiz"), positions };
+          farbe: Number(q("#p-farbe").value), notiz: g("#p-notiz"), positions, intern: q("#p-intern").checked, archiviert: q("#p-arch").checked };
         submitWith(ev.submitter, d, "#p-err", async () => {
           const r = isNew ? await api("POST", "/api/projects", body) : await api("PUT", `/api/projects/${p.id}`, body);
           ui.projSel = isNew ? r.id : p.id;
@@ -816,7 +1072,7 @@
       const fillPos = (keep) => {
         const p = projById(q("#t-proj").value); const ps = (p && p.positions) || [];
         const empPos = (empById(q("#t-emp").value) || {}).position || "";
-        q("#t-pos").innerHTML = ps.length ? ps.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("") : `<option value="">Keine Positionen</option>`;
+        q("#t-pos").innerHTML = ps.length ? ps.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("") : `<option value="">Ohne Position</option>`;
         const guess = ps.find(x => x.id === keep) || ps.find(x => x.name.toLowerCase() === empPos.toLowerCase());
         if (guess) q("#t-pos").value = guess.id;
       };
@@ -853,7 +1109,7 @@
         ev.preventDefault();
         const std = Number(q("#t-std").value);
         if (!q("#t-datum").value) { showErr(d, "#t-err", "Bitte ein Datum eintragen."); return; }
-        if (!q("#t-pos").value) { showErr(d, "#t-err", "Für dieses Projekt sind keine Positionen festgelegt."); return; }
+        if (!q("#t-pos").value && ((projById(q("#t-proj").value) || {}).positions || []).length) { showErr(d, "#t-err", "Bitte eine Position wählen."); return; }
         if (!std || std <= 0 || std > 24) { showErr(d, "#t-err", "Bitte Stunden zwischen 0 und 24 eintragen oder Von und Bis ausfüllen."); return; }
         const body = { mitarbeiterId: q("#t-emp").value, projektId: q("#t-proj").value, positionId: q("#t-pos").value, datum: q("#t-datum").value,
           von: q("#t-von").value, bis: q("#t-bis").value, pause: q("#t-pause").value, stunden: std, beschreibung: q("#t-desc").value.trim() };
@@ -866,11 +1122,11 @@
   }
   $("#btn-add-time").onclick = () => openTime(null);
 
-  function openDay(e, day) {
+  function openDay(e, day, pf = ui.calProj) {
     if (!e) return;
-    const tms = data.times.filter(x => x.mitarbeiterId === e.id && x.datum === day && (!ui.calProj || x.projektId === ui.calProj));
+    const tms = data.times.filter(x => x.mitarbeiterId === e.id && x.datum === day && (!pf || x.projektId === pf));
     const mayAdd = can("times.manage") || (can("times.book") && e.id === me().id);
-    if (!tms.length && mayAdd) { openTime(null, { mitarbeiterId: e.id, datum: day, ...(ui.calProj ? { projektId: ui.calProj } : {}) }); return; }
+    if (!tms.length && mayAdd) { openTime(null, { mitarbeiterId: e.id, datum: day, ...(pf && bookableP(projById(pf) || {}) ? { projektId: pf } : {}) }); return; }
     const d0 = parse(day); const hol = holidayName(day);
     const a = data.absences.find(a => a.mitarbeiterId === e.id && a.status !== "abgelehnt" && a.von <= day && a.bis >= day);
     const notes = [hol, a ? `${(TYPES[a.art] || TYPES.sonstiges).label} (${(STATUS[a.status] || {}).label || ""})` : ""].filter(Boolean);

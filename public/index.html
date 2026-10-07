@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Trustreels Personal</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
+<script src="/theme.js"></script>
 </head>
 <body>
 
@@ -12,7 +14,7 @@
   <div class="login-card">
     <div>
       <span class="eyebrow">Personal &amp; Projekte</span>
-      <h1 class="logo">Trust<b>reels</b></h1>
+      <h1 class="logo"><img class="on-dark" src="/logo-dark.svg" alt="Trust Reels"><img class="on-light" src="/logo-light.svg" alt="Trust Reels"></h1>
     </div>
     <form id="f-login" novalidate>
       <label>Benutzername<input id="l-user" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
@@ -29,7 +31,7 @@
     <div class="top-inner">
       <div class="brand">
         <div class="brand-left">
-          <h1 class="logo">Trust<b>reels</b></h1>
+          <h1 class="logo"><img class="on-dark" src="/logo-dark.svg" alt="Trust Reels"><img class="on-light" src="/logo-light.svg" alt="Trust Reels"></h1>
           <span class="muted" id="subtitle">Personal &amp; Projekte</span>
         </div>
         <div class="user-menu">
@@ -51,7 +53,9 @@
         <div class="filters">
           <select id="pj-status" aria-label="Projektstatus">
             <option value="aktiv">Laufende Projekte</option>
+            <option value="intern">Interne Projekte</option>
             <option value="abgeschlossen">Abgeschlossene</option>
+            <option value="archiviert">Archiv</option>
             <option value="">Alle Projekte</option>
           </select>
           <div class="seg unit-seg" role="group" aria-label="Anzeige"><button data-unit="pct" aria-selected="true">Prozent</button><button data-unit="h" aria-selected="false">Stunden</button></div>
@@ -65,16 +69,20 @@
     <section class="view" id="v-time" hidden>
       <div class="toolbar">
         <div class="filters">
+          <div class="seg" id="tm-view" role="group" aria-label="Ansicht"><button data-view="cal" aria-selected="true">Kalender</button><button data-view="list" aria-selected="false">Liste</button></div>
+          <div class="cal-nav" id="tm-calnav"><button class="ghost" id="tm-prev" aria-label="Vorheriger Monat">←</button><strong id="tm-caltitle" style="min-width:130px;text-align:center"></strong><button class="ghost" id="tm-next" aria-label="Nächster Monat">→</button><button class="small" id="tm-today">Heute</button></div>
           <select id="tm-month" aria-label="Monat"></select>
           <select id="tm-emp" aria-label="Mitarbeiter"></select>
           <select id="tm-proj" aria-label="Projekt"></select>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="tm-report">Report als PDF</button>
           <button id="tm-export">CSV exportieren</button>
         </div>
       </div>
       <div class="table-sum" id="tm-sum"></div>
-      <div class="tablebox">
+      <div id="tm-cal"></div>
+      <div class="tablebox" id="tm-listbox">
         <table>
           <thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Projekt</th><th>Position</th><th>Tätigkeit</th><th>Uhrzeit</th><th class="num">Stunden</th></tr></thead>
           <tbody id="tm-body"></tbody>
@@ -131,6 +139,23 @@
       <p class="muted" id="cal-note" style="margin:0;font-size:.84rem"></p>
     </section>
 
+    <section class="view" id="v-stats" hidden>
+      <div class="toolbar">
+        <div class="filters">
+          <label style="flex-direction:row;align-items:center;gap:8px">Jahr <select id="st-year"></select></label>
+        </div>
+        <button id="st-report">Mitarbeiter-Report (PDF)</button>
+      </div>
+      <div class="stats" id="st-cards"></div>
+      <div class="tablebox">
+        <table>
+          <thead><tr><th>Mitarbeiter</th><th class="num">Soll</th><th class="num">Ist</th><th class="num">Überstunden</th><th class="num">Stunden Monat</th><th class="num">Urlaub genommen</th><th class="num">Beantragt</th><th class="num">Resturlaub</th><th class="num">Krankheitstage</th><th class="num">Krankmeldungen</th><th></th></tr></thead>
+          <tbody id="st-body"></tbody>
+        </table>
+      </div>
+      <p class="muted" style="margin:0;font-size:.84rem" id="st-note"></p>
+    </section>
+
     <section class="view" id="v-team" hidden>
       <div class="toolbar">
         <div class="filters">
@@ -158,6 +183,7 @@
   </main>
 </div>
 
+<div id="report-root" hidden></div>
 <div id="drawer-root"></div>
 <div id="toast-root"></div>
 <script src="/app.js"></script>

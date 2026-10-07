@@ -30,7 +30,23 @@ Personal- und Projektsoftware für Trustreels, aufgebaut auf der Teamkartei-Vorl
 
 Alle Rechte prüft der Server. Was jemand nicht sehen darf, wird gar nicht erst an den Browser geschickt.
 
-## Starten
+## Auf Vercel betreiben (empfohlen)
+
+Vercel führt die App als Serverless Functions aus. Dort gibt es keinen dauerhaften Speicher auf der Festplatte. Deshalb liegen die Daten auf Vercel in **Upstash Redis**, das du direkt in Vercel verbindest. Der kostenlose Tarif reicht für ein kleines Team.
+
+1. Auf [vercel.com](https://vercel.com) **„Add New… → Project“** wählen und das GitHub-Repository `hw-oss30/trust` importieren.
+2. Bei den Projekteinstellungen nichts ändern. Framework: „Other“, kein Build Command. `vercel.json` regelt den Rest.
+3. Im Projekt unter **Storage** (bzw. **Marketplace**) **„Upstash for Redis“** hinzufügen und mit dem Projekt verbinden. Dabei setzt Vercel die Variablen `KV_REST_API_URL` und `KV_REST_API_TOKEN` (oder `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`) automatisch.
+4. Unter **Deployments** einmal **„Redeploy“** klicken, damit die neuen Variablen greifen.
+5. Die Vercel-Adresse öffnen und mit `hendrikwendker` oder `tomgerlitz` anmelden. Beim ersten Aufruf werden Admins und Standardrollen in Redis angelegt.
+
+HTTPS ist bei Vercel automatisch aktiv, die Cookies werden dann als `Secure` gesetzt. Ohne verbundenes Redis zeigt die Anmeldung den Hinweis „Keine Datenbank verbunden“.
+
+**Datensicherung:** Alle Daten liegen im Redis-Schlüssel `trustreels:db`. In der Upstash-Konsole kannst du Backups aktivieren oder den Inhalt im Data Browser exportieren.
+
+**Hinweis zum Branch:** Vercel baut standardmäßig den Haupt-Branch (`main`) als Produktion. Solange der Code nur auf `claude/trustreels-hr-software-rlvust` liegt, erstellt Vercel daraus eine Preview-Adresse. Für die feste Adresse den Branch nach `main` mergen.
+
+## Lokal starten
 
 Voraussetzung: Node.js 18 oder neuer. Weitere Abhängigkeiten gibt es nicht.
 
@@ -39,7 +55,7 @@ npm start
 # → http://localhost:3000
 ```
 
-Die Daten liegen in `data/db.json`. Die Datei wird beim ersten Start angelegt und liegt nicht im Git. **Sichere sie regelmäßig.**
+Lokal liegen die Daten in `data/db.json`. Die Datei wird beim ersten Start angelegt und liegt nicht im Git. Sind die Redis-Variablen gesetzt, nutzt auch der lokale Start Redis.
 
 Einstellungen über Umgebungsvariablen:
 
@@ -47,18 +63,19 @@ Einstellungen über Umgebungsvariablen:
 |---|---|---|
 | `PORT` | `3000` | Port des Servers |
 | `DATA_DIR` | `./data` | Ordner für die Datenbank |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | – | Upstash Redis statt Datei (auf Vercel Pflicht) |
+| `REDIS_PREFIX` | `trustreels` | Präfix der Redis-Schlüssel, z. B. für eine Testumgebung |
+| `TRUST_PROXY` | – | auf `1` setzen, wenn ein Reverse-Proxy `X-Forwarded-For` setzt (für die Login-Bremse je IP) |
 | `COOKIE_SECURE` | – | auf `1` setzen, wenn die Seite per HTTPS läuft und kein Proxy `X-Forwarded-Proto` setzt |
 
-### Mit Docker
+### Alternativ: eigener Server mit Docker
 
 ```bash
 docker build -t trustreels-personal .
 docker run -d -p 3000:3000 -v trustreels-data:/app/data --name trustreels trustreels-personal
 ```
 
-### Im Internet betreiben
-
-Betreibe die App hinter einem Reverse-Proxy mit HTTPS (z. B. Caddy, nginx oder Traefik). Ohne HTTPS gehen Passwörter unverschlüsselt durchs Netz.
+Betreibe die App auf einem eigenen Server hinter einem Reverse-Proxy mit HTTPS (z. B. Caddy, nginx oder Traefik). Ohne HTTPS gehen Passwörter unverschlüsselt durchs Netz.
 
 ## Erste Anmeldung
 
@@ -70,4 +87,4 @@ Beim ersten Start werden die beiden Admin-Konten angelegt. Im Code stehen die Pa
 npm test
 ```
 
-Die Tests prüfen Anmeldung, Rechte, Sichtbarkeit, Passwortwechsel und den Schutz des letzten Admins.
+Die Tests prüfen Anmeldung, Rechte, Sichtbarkeit, Passwortwechsel und den Schutz des letzten Admins. Außerdem prüfen sie den Redis-Speicher an einem nachgebauten Upstash-Server, so aufgerufen wie auf Vercel.

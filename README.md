@@ -49,7 +49,9 @@ HTTPS ist bei Vercel automatisch aktiv, die Cookies werden dann als `Secure` ges
 
 **Datensicherung:** Alle Daten liegen im Redis-Schlüssel `trustreels:db`. In der Upstash-Konsole kannst du Backups aktivieren oder den Inhalt im Data Browser exportieren.
 
-**Hinweis zum Branch:** Vercel baut standardmäßig den Haupt-Branch (`main`) als Produktion. Solange der Code nur auf `claude/trustreels-hr-software-rlvust` liegt, erstellt Vercel daraus eine Preview-Adresse. Für die feste Adresse den Branch nach `main` mergen.
+**Branch und Domain:** Vercel baut den Standard-Branch des Repositorys (derzeit `claude/trustreels-hr-software-rlvust`) als Produktion. Jeder Push dorthin geht automatisch online. Jedes Deployment bekommt zusätzlich eine eigene Adresse (`trust-xxxx-trustreels.vercel.app`) als feste Momentaufnahme. Für das Team gilt nur die eigene Domain.
+
+**Eigene Domain (Strato):** In Vercel unter Settings → Domains die Subdomain (z. B. `personal.trustreels.de`) hinzufügen. Dann bei Strato die Subdomain anlegen und als **CNAME-Record** den von Vercel angezeigten Wert eintragen. Die Nameserver (NS-Records) bleiben unverändert bei Strato.
 
 ## Lokal starten
 

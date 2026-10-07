@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Trustreels Personal</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Trustreels">
 <link rel="stylesheet" href="/style.css">
 <script src="/theme.js"></script>
 </head>
@@ -36,6 +43,7 @@
         </div>
         <div class="user-menu">
           <button class="edit-only" id="btn-add-abs" hidden>Abwesenheit eintragen</button>
+          <button class="timer-btn" id="btn-timer" hidden></button>
           <button class="primary" id="btn-add-time" hidden>Zeit erfassen</button>
           <button class="me-btn" id="btn-me" title="Benutzereinstellungen"><span class="avatar" id="me-avatar"></span><span class="who"><span id="me-name"></span><small id="me-role"></small></span></button>
           <button class="ghost" id="btn-logout">Abmelden</button>
@@ -97,7 +105,7 @@
         <div class="panel-head"><h2 id="ab-vac-title">Urlaubskonto</h2><span class="muted" style="font-size:.82rem">Arbeitstage laut Diensttagen, ohne Feiertage NRW</span></div>
         <div class="tablebox">
           <table>
-            <thead><tr><th>Mitarbeiter</th><th class="num">Anspruch</th><th class="num">Genommen</th><th class="num">Beantragt</th><th class="num">Rest</th><th class="num">Krankheitstage</th><th></th></tr></thead>
+            <thead><tr><th>Mitarbeiter</th><th class="num">Anspruch</th><th class="num">Übertrag</th><th class="num">Genommen</th><th class="num">Beantragt</th><th class="num">Rest</th><th class="num">Krankheitstage</th><th></th></tr></thead>
             <tbody id="ab-vac"></tbody>
           </table>
         </div>
@@ -158,6 +166,8 @@
       <p class="muted" style="margin:0;font-size:.84rem" id="st-note"></p>
     </section>
 
+    <section class="view" id="v-settings" hidden></section>
+
     <section class="view" id="v-team" hidden>
       <div class="toolbar">
         <div class="filters">
@@ -183,6 +193,7 @@
       </div>
     </section>
   </main>
+  <button class="fab primary" id="fab" aria-label="Schnellaktionen" hidden>＋</button>
 </div>
 
 <div id="report-root" hidden></div>

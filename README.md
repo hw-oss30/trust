@@ -17,7 +17,13 @@ Personal- und Projektsoftware für Trustreels, aufgebaut auf der Teamkartei-Vorl
 - **Statistiken:** Überstunden, Resturlaub, Urlaub genommen/beantragt, Krankheitstage und Krankmeldungen je Mitarbeiter. Das Soll zählt ab Konto-Anlage oder ab „Überstunden zählen ab“; ein Übertrag aus der Zeit davor lässt sich eintragen.
 - **Mitarbeiter-Report als PDF:** Monat und Mitarbeiter wählen (Admins auch „Alle“), dann „Als PDF speichern“. Der Report enthält jeden Tag mit Status, Soll, Ist und Tätigkeiten, Summen, Abwesenheiten, Jahreswerte und Unterschriftsfelder.
 - **Dunkel oder Hell:** in den Benutzereinstellungen wählbar („Wie Gerät“ folgt der Systemeinstellung), gespeichert pro Benutzer.
-- Feiertage NRW, Urlaubskonto, läuft auch auf dem Handy.
+- **E-Mail-Benachrichtigungen:** Neue Anträge und Krankmeldungen gehen an eine Admin-Adresse (Standard `info@trustreels.de`, änderbar), Genehmigungen und Ablehnungen an den Mitarbeiter. Der Versand läuft über euer Postfach (z. B. Strato). Einrichtung unter „Einstellungen“, dort gibt es auch eine Testmail.
+- **Stoppuhr:** Start/Stopp in der Kopfleiste. Die Uhr läuft serverseitig weiter, auch beim Gerätewechsel. Beim Stoppen öffnet sich die fertig ausgefüllte Buchung. Jeder kann sie in seinen Einstellungen ausblenden.
+- **Stundensätze & Kosten (optional):** €/h je Projektposition und ein interner Kostensatz je Mitarbeiter. Projekte zeigen Kalkulation, gebuchten Wert, Kosten und Deckungsbeitrag, sichtbar nur für Admins und die Projektverwaltung.
+- **Urlaubsübertrag (optional):** Resturlaub geht automatisch ins Folgejahr und verfällt zum Stichtag (Standard 31.03.), optional mit Höchstgrenze. Pro Mitarbeiter lässt sich ein Wert manuell eintragen, der nicht automatisch verfällt.
+- **Arbeitszeit-Änderungen mit Stichtag:** z. B. ein Wechsel in Teilzeit. Soll und Überstunden rechnen bis zum Stichtag mit den alten, danach mit den neuen Wochenstunden und Diensttagen.
+- **Handy:** kompakte Kopfleiste, „+“-Knopf für Schnellaktionen, Tabellen als Karten. Über „Zum Home-Bildschirm“ lässt sich die Seite wie eine App ablegen.
+- Feiertage NRW, Urlaubskonto.
 
 ### Rechte im Überblick
 
@@ -84,6 +90,10 @@ docker run -d -p 3000:3000 -v trustreels-data:/app/data --name trustreels trustr
 ```
 
 Betreibe die App auf einem eigenen Server hinter einem Reverse-Proxy mit HTTPS (z. B. Caddy, nginx oder Traefik). Ohne HTTPS gehen Passwörter unverschlüsselt durchs Netz.
+
+## E-Mail einrichten (Strato)
+
+Als Admin unter **Einstellungen → E-Mail-Benachrichtigungen**: „Benachrichtigungen verschicken“ anhaken, Mailserver `smtp.strato.de`, Port `465`, Benutzername `info@trustreels.de` und das Passwort des Postfachs eintragen. Dann speichern und „Testmail senden“. Das Passwort liegt in der Datenbank und wird nie wieder an den Browser geschickt. Optional lässt sich mit der Umgebungsvariable `APP_URL` (z. B. `https://personal.trustreels.de`) der Link in den Mails festlegen; sonst wird die aufgerufene Adresse verwendet.
 
 ## Erste Anmeldung
 

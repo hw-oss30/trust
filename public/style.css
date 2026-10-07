@@ -372,3 +372,7 @@ label.perm.admin { border: 1px solid var(--glass-edge); }
   .rp-table tr { break-inside: avoid; }
 }
 .rp-logo { height: 30px; width: auto; display: block; margin-bottom: 2px; }
+.edit-btn { white-space: nowrap; }
+.proj .edit-btn { padding: 3px 10px; font-size: .76rem; }
+#roles-list .list-row { flex-wrap: nowrap; align-items: center; }
+#roles-list .who { flex: 1; }

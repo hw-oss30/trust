@@ -66,6 +66,13 @@ test("Login und Anlegen funktionieren mit Redis-Speicher im Vercel-Aufruf", asyn
   assert.ok(saved.users.every(u => !("password" in u)) && saved.users[0].passwordHash.startsWith("scrypt$"));
   const b = await c("GET", "/api/bootstrap");
   assert.equal(b.body.projects[0].positions[0].name, "Editor");
+  // Bearbeiten (PUT mit ID im Pfad) über das Vercel-Rewrite
+  const proj = b.body.projects[0];
+  const put = await c("PUT", `/api/projects/${proj.id}`, { ...proj, name: "Reel 2", positions: [...proj.positions, { name: "Kamera", stunden: 5 }] });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  const after = (await c("GET", "/api/bootstrap")).body.projects[0];
+  assert.equal(after.name, "Reel 2");
+  assert.equal(after.positions.length, 2);
 });
 
 test("Fehlversuche beim Login werden instanzübergreifend gezählt", async () => {

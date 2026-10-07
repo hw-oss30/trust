@@ -209,18 +209,24 @@
     const budget = budgetOf(p), booked = Number(p.gebucht) || 0, cls = progCls(booked, budget);
     return `<div class="proj" role="button" tabindex="0" aria-pressed="${ui.tab === "projects" && p.id === ui.projSel}" data-proj="${esc(p.id)}">
       <div class="proj-top"><div style="min-width:0"><div class="proj-name"><span class="dot" style="background:${projColor(p)};margin-right:8px"></span>${esc(p.name || "Ohne Namen")}</div><div class="muted" style="font-size:.84rem">${esc([p.kunde, p.nummer].filter(Boolean).join(" · ") || (p.intern ? "Internes Projekt" : "Ohne Kunde"))}</div></div>
-        <div class="chips" style="justify-content:flex-end">${projBadges(p)}</div></div>
+        <div class="chips" style="justify-content:flex-end">${projBadges(p)}${can("projects.manage") ? editBtn(`data-edit-proj="${esc(p.id)}" aria-label="Projekt ${esc(p.name)} bearbeiten"`) : ""}</div></div>
       <div class="proj-big"><span class="pct big ${cls}" title="${esc(progTitle(booked, budget))}">${progText(booked, budget)}</span><span class="muted" style="font-size:.82rem">${!budget ? "ohne Stundenbudget" : ui.unit === "pct" ? `${fmtH(booked)} / ${fmtH(budget)} h` : `${Math.round(booked / budget * 100)} %`}</span></div>
       ${progBar(booked, budget, cls)}
       <div class="pos-list">${(p.positions || []).map(x => { const b = Number(x.gebucht) || 0, s = Number(x.stunden) || 0, c = progCls(b, s); return `<div class="pos-row"><span>${esc(x.name)}</span><span class="val pct ${c}">${progText(b, s)}</span>${progBar(b, s, c)}</div>`; }).join("") || `<span class="muted" style="font-size:.84rem">Keine Positionen festgelegt.</span>`}</div>
     </div>`;
   }
+  // Sichtbarer Bearbeiten-Knopf (zusätzlich ist die ganze Zeile anklickbar)
+  const editBtn = (attr, label = "Bearbeiten") => `<button type="button" class="small edit-btn" ${attr}><span aria-hidden="true">✎</span> ${label}</button>`;
   const projBadges = (p) => (p.intern ? `<span class="pill neutral">Intern</span>` : "") + (p.archiviert ? `<span class="pill neutral">Archiviert</span>` : p.status === "abgeschlossen" ? `<span class="pill neutral">Abgeschlossen</span>` : "");
   function bindProjCards(root) {
     $$("[data-proj]", root).forEach(el => {
-      const go = () => { ui.projSel = el.dataset.proj; if (ui.tab !== "projects") setTab("projects"); else renderProjects(); };
-      el.onclick = go; el.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } };
+      const go = () => {
+        ui.projSel = el.dataset.proj; if (ui.tab !== "projects") setTab("projects"); else renderProjects();
+        const rep = $("#pj-report"); if (rep && !rep.hidden) rep.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+      el.onclick = go; el.onkeydown = (ev) => { if (ev.target === el && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); go(); } };
     });
+    $$("[data-edit-proj]", root).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); openProj(projById(b.dataset.editProj)); });
   }
   function unitSeg() { return `<div class="seg unit-seg" role="group" aria-label="Anzeige"><button data-unit="pct" aria-selected="${ui.unit === "pct"}">Prozent</button><button data-unit="h" aria-selected="${ui.unit === "h"}">Stunden</button></div>`; }
 
@@ -335,8 +341,8 @@
         ${empRows.length ? empRows.map(([id, r]) => `<tr><td class="name">${esc(fullName(empById(id)))}</td><td class="muted">${Object.entries(r.pos).map(([pid, h]) => `${esc((posById(p, pid) || {}).name || "?")} ${fmtH(h)} h`).join(" · ")}</td><td class="num"><strong>${fmtH(r.total)}</strong></td><td class="num">${booked ? Math.round(r.total / booked * 100) : 0} %</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Noch keine Stunden gebucht.</td></tr>`}
       </tbody></table></div>
       <div class="subhead">Einträge</div>
-      <div class="tablebox"><table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Position</th><th>Tätigkeit</th><th class="num">Stunden</th></tr></thead><tbody>
-        ${tms.length ? [...tms].sort((a, b) => b.datum.localeCompare(a.datum)).map(t => `<tr class="click" data-time="${esc(t.id)}"><td style="white-space:nowrap">${WD[parse(t.datum).getDay()]}, ${de(t.datum)}</td><td>${esc(fullName(empById(t.mitarbeiterId)))}</td><td>${esc((posById(p, t.positionId) || {}).name || "–")}</td><td class="muted">${esc(t.beschreibung || "–")}</td><td class="num"><strong>${fmtH(Number(t.stunden) || 0)}</strong></td></tr>`).join("") : `<tr><td colspan="5" class="empty">Noch keine Zeiten erfasst.</td></tr>`}
+      <div class="tablebox"><table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Position</th><th>Tätigkeit</th><th class="num">Stunden</th><th></th></tr></thead><tbody>
+        ${tms.length ? [...tms].sort((a, b) => b.datum.localeCompare(a.datum)).map(t => `<tr class="click" data-time="${esc(t.id)}"><td style="white-space:nowrap">${WD[parse(t.datum).getDay()]}, ${de(t.datum)}</td><td>${esc(fullName(empById(t.mitarbeiterId)))}</td><td>${esc((posById(p, t.positionId) || {}).name || "–")}</td><td class="muted">${esc(t.beschreibung || "–")}</td><td class="num"><strong>${fmtH(Number(t.stunden) || 0)}</strong></td><td class="actions">${mayEditTime(t) ? editBtn(`data-edit-time="${esc(t.id)}"`) : ""}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">Noch keine Zeiten erfasst.</td></tr>`}
       </tbody></table></div>` : ""}`;
     const ed = $("#rep-edit"); if (ed) ed.onclick = () => openProj(p);
     const ar = $("#rep-arch"); if (ar) ar.onclick = async () => {
@@ -424,8 +430,8 @@
     $("#tm-body").innerHTML = rows.length ? rows.map(t => { const p = projById(t.projektId); return `<tr class="click" data-time="${esc(t.id)}">
       <td style="white-space:nowrap">${WD[parse(t.datum).getDay()]}, ${de(t.datum)}</td><td class="name">${esc(fullName(empById(t.mitarbeiterId)))}</td>
       <td><span class="type"><span class="dot" style="background:${projColor(p)}"></span>${esc(p ? p.name : "Gelöschtes Projekt")}</span></td><td>${esc((posById(p, t.positionId) || {}).name || "–")}</td>
-      <td class="muted" style="max-width:260px">${esc(t.beschreibung || "–")}</td><td class="muted" style="white-space:nowrap">${t.von && t.bis ? `${esc(t.von)}–${esc(t.bis)}` : ""}</td><td class="num"><strong>${fmtH(Number(t.stunden) || 0)}</strong></td></tr>`; }).join("")
-      : `<tr><td colspan="7" class="empty">Für diese Auswahl sind keine Stunden erfasst.</td></tr>`;
+      <td class="muted" style="max-width:260px">${esc(t.beschreibung || "–")}</td><td class="muted" style="white-space:nowrap">${t.von && t.bis ? `${esc(t.von)}–${esc(t.bis)}` : ""}</td><td class="num"><strong>${fmtH(Number(t.stunden) || 0)}</strong></td><td class="actions">${mayEditTime(t) ? editBtn(`data-edit-time="${esc(t.id)}"`) : ""}</td></tr>`; }).join("")
+      : `<tr><td colspan="8" class="empty">Für diese Auswahl sind keine Stunden erfasst.</td></tr>`;
     $$("#tm-body tr[data-time]").forEach(r => r.onclick = () => openTime(data.times.find(t => t.id === r.dataset.time)));
   }
 
@@ -648,7 +654,7 @@
     $("#ab-body").innerHTML = rows.length ? rows.map(a => `<tr class="click" data-abs="${esc(a.id)}">
       <td class="name">${esc(fullName(empById(a.mitarbeiterId)))}</td><td>${typePill(a.art)}</td><td class="mono" style="white-space:nowrap">${range(a)}${a.halberTag ? ' <span class="muted">(½)</span>' : ""}</td>
       <td class="num">${fmtDays(workdays(a))}</td><td>${statusPill(a.status)}</td><td class="muted" style="max-width:220px">${esc(a.notiz || "")}</td>
-      <td class="actions">${can("absences.manage") && a.status === "beantragt" ? `<button class="small" data-approve="${esc(a.id)}">Genehmigen</button> <button class="small ghost danger" data-reject="${esc(a.id)}">Ablehnen</button>` : ""}</td></tr>`).join("")
+      <td class="actions">${can("absences.manage") && a.status === "beantragt" ? `<button class="small" data-approve="${esc(a.id)}">Genehmigen</button> <button class="small ghost danger" data-reject="${esc(a.id)}">Ablehnen</button> ` : ""}${mayEditAbs(a) ? editBtn(`data-edit-abs="${esc(a.id)}"`) : ""}</td></tr>`).join("")
       : `<tr><td colspan="7" class="empty">Keine Abwesenheiten für diese Auswahl.</td></tr>`;
     $$("#ab-body tr[data-abs]").forEach(r => r.onclick = () => openAbs(data.absences.find(a => a.id === r.dataset.abs)));
     bindDecisions($("#ab-body"));
@@ -740,25 +746,35 @@
     const q = $("#tt-q").value.trim().toLowerCase(), st = $("#tt-status").value;
     const rows = data.users.filter(e => (!st || (e.status || "aktiv") === st) && (!q || [fullName(e), e.username, e.position, e.abteilung, e.email].join(" ").toLowerCase().includes(q))).sort(sortEmp);
     $("#tt-head").innerHTML = admin
-      ? `<tr><th>Name</th><th>Benutzername</th><th>Rolle / Rechte</th><th>Position</th><th>Kontakt</th><th class="num">Std./Wo.</th><th>Status</th></tr>`
+      ? `<tr><th>Name</th><th>Benutzername</th><th>Rolle / Rechte</th><th>Position</th><th>Kontakt</th><th class="num">Std./Wo.</th><th>Status</th><th></th></tr>`
       : `<tr><th>Name</th><th>Position</th><th>Abteilung</th><th>Kontakt</th><th>Eintritt</th><th>Status</th></tr>`;
     const statusCell = (e) => (e.status || "aktiv") === "aktiv" ? `<span class="pill ok">Aktiv</span>` : `<span class="pill neutral">Deaktiviert</span>`;
     const contact = (e) => `<div style="font-size:.85rem">${esc(e.email || "")}</div><div class="muted mono" style="font-size:.8rem">${esc(e.telefon || "")}</div>`;
     $("#tt-body").innerHTML = rows.length ? rows.map(e => admin
-      ? `<tr class="click" data-user="${esc(e.id)}"><td class="name">${esc(fullName(e))}${e.id === me().id ? '<span class="role-chip">Du</span>' : ""}<div class="muted" style="font-size:.8rem;font-weight:400">${esc(e.abteilung || "")}</div></td><td class="mono">${esc(e.username)}</td><td>${rightsChips(e)}</td><td>${esc(e.position || "–")}</td><td>${contact(e)}</td><td class="num">${esc(e.stunden ?? "–")}</td><td>${statusCell(e)}</td></tr>`
+      ? `<tr class="click" data-user="${esc(e.id)}"><td class="name">${esc(fullName(e))}${e.id === me().id ? '<span class="role-chip">Du</span>' : ""}<div class="muted" style="font-size:.8rem;font-weight:400">${esc(e.abteilung || "")}</div></td><td class="mono">${esc(e.username)}</td><td>${rightsChips(e)}</td><td>${esc(e.position || "–")}</td><td>${contact(e)}</td><td class="num">${esc(e.stunden ?? "–")}</td><td>${statusCell(e)}</td><td class="actions">${editBtn(`data-edit-user="${esc(e.id)}"`)}</td></tr>`
       : `<tr><td class="name">${esc(fullName(e))}</td><td>${esc(e.position || "–")}</td><td>${esc(e.abteilung || "–")}</td><td>${contact(e)}</td><td class="mono">${de(e.eintritt)}</td><td>${statusCell(e)}</td></tr>`).join("")
-      : `<tr><td colspan="7" class="empty">Keine Treffer.</td></tr>`;
+      : `<tr><td colspan="8" class="empty">Keine Treffer.</td></tr>`;
     $$("#tt-body tr[data-user]").forEach(r => r.onclick = () => openUser(data.users.find(u => u.id === r.dataset.user)));
     if (admin) {
       $("#roles-list").innerHTML = data.roles.map(r => {
         const n = data.users.filter(u => u.roleId === r.id).length;
-        return `<div class="list-row click" data-role="${esc(r.id)}" style="cursor:pointer"><div class="who"><span class="name">${esc(r.name)}${r.isAdmin ? '<span class="role-chip">Admin</span>' : ""}</span><span class="muted" style="font-size:.84rem">${r.isAdmin ? "Alle Rechte inkl. Benutzerverwaltung" : r.permissions.map(k => permLabel(k)).join(" · ") || "Keine Rechte"}</span></div><span class="pill neutral">${n} Benutzer</span></div>`;
+        return `<div class="list-row click" data-role="${esc(r.id)}" style="cursor:pointer"><div class="who"><span class="name">${esc(r.name)}${r.isAdmin ? '<span class="role-chip">Admin</span>' : ""}</span><span class="muted" style="font-size:.84rem">${r.isAdmin ? "Alle Rechte inkl. Benutzerverwaltung" : r.permissions.map(k => permLabel(k)).join(" · ") || "Keine Rechte"}</span></div><div style="display:flex;gap:8px;align-items:center"><span class="pill neutral">${n} Benutzer</span>${editBtn(`data-edit-role="${esc(r.id)}"`)}</div></div>`;
       }).join("") || `<div class="muted">Noch keine Rollen.</div>`;
       $$("#roles-list [data-role]").forEach(r => r.onclick = () => openRole(roleById(r.dataset.role)));
     }
   }
   const permLabel = (k) => (data.catalog.find(p => p.key === k) || { label: k }).label;
   ["#tt-q", "#tt-status"].forEach(s => $(s).addEventListener("input", renderTeam));
+
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-edit-time],[data-edit-abs],[data-edit-user],[data-edit-role]");
+    if (!b) return;
+    ev.stopPropagation();
+    if (b.dataset.editTime) openTime(data.times.find(t => t.id === b.dataset.editTime));
+    else if (b.dataset.editAbs) openAbs(data.absences.find(a => a.id === b.dataset.editAbs));
+    else if (b.dataset.editUser) openUser(data.users.find(u => u.id === b.dataset.editUser));
+    else if (b.dataset.editRole) openRole(roleById(b.dataset.editRole));
+  }, true);
 
   // ---------- Formulare ----------
   function closeDrawer() { $("#drawer-root").innerHTML = ""; document.removeEventListener("keydown", escClose); }

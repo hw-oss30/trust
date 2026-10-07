@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trustreels Personal</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div id="login" class="login-wrap" hidden>
+  <div class="login-card">
+    <div>
+      <span class="eyebrow">Personal &amp; Projekte</span>
+      <h1 class="logo">Trust<b>reels</b></h1>
+    </div>
+    <form id="f-login" novalidate>
+      <label>Benutzername<input id="l-user" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+      <label>Passwort<input id="l-pass" type="password" autocomplete="current-password" required></label>
+      <div class="err" id="l-err" hidden></div>
+      <button class="primary" type="submit">Anmelden</button>
+    </form>
+    <p class="muted" style="margin:0;font-size:.82rem">Zugangsdaten bekommst du von der Geschäftsführung.</p>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand">
+        <div class="brand-left">
+          <h1 class="logo">Trust<b>reels</b></h1>
+          <span class="muted" id="subtitle">Personal &amp; Projekte</span>
+        </div>
+        <div class="user-menu">
+          <button class="edit-only" id="btn-add-abs" hidden>Abwesenheit eintragen</button>
+          <button class="primary" id="btn-add-time" hidden>Zeit erfassen</button>
+          <button class="me-btn" id="btn-me" title="Benutzereinstellungen"><span class="avatar" id="me-avatar"></span><span class="who"><span id="me-name"></span><small id="me-role"></small></span></button>
+          <button class="ghost" id="btn-logout">Abmelden</button>
+        </div>
+      </div>
+      <nav class="tabs" role="tablist" id="tabs"></nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="view" id="v-overview" hidden></section>
+
+    <section class="view" id="v-projects" hidden>
+      <div class="toolbar">
+        <div class="filters">
+          <select id="pj-status" aria-label="Projektstatus">
+            <option value="aktiv">Laufende Projekte</option>
+            <option value="abgeschlossen">Abgeschlossene</option>
+            <option value="">Alle Projekte</option>
+          </select>
+          <div class="seg unit-seg" role="group" aria-label="Anzeige"><button data-unit="pct" aria-selected="true">Prozent</button><button data-unit="h" aria-selected="false">Stunden</button></div>
+        </div>
+        <button class="primary" id="btn-add-proj" hidden>Projekt anlegen</button>
+      </div>
+      <div class="projects" id="pj-list"></div>
+      <div class="panel" id="pj-report" hidden></div>
+    </section>
+
+    <section class="view" id="v-time" hidden>
+      <div class="toolbar">
+        <div class="filters">
+          <select id="tm-month" aria-label="Monat"></select>
+          <select id="tm-emp" aria-label="Mitarbeiter"></select>
+          <select id="tm-proj" aria-label="Projekt"></select>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="tm-export">CSV exportieren</button>
+        </div>
+      </div>
+      <div class="table-sum" id="tm-sum"></div>
+      <div class="tablebox">
+        <table>
+          <thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Projekt</th><th>Position</th><th>Tätigkeit</th><th>Uhrzeit</th><th class="num">Stunden</th></tr></thead>
+          <tbody id="tm-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="view" id="v-absences" hidden>
+      <div class="panel">
+        <div class="panel-head"><h2 id="ab-vac-title">Urlaubskonto</h2><span class="muted" style="font-size:.82rem">Arbeitstage laut Diensttagen, ohne Feiertage NRW</span></div>
+        <div class="tablebox">
+          <table>
+            <thead><tr><th>Mitarbeiter</th><th class="num">Anspruch</th><th class="num">Genommen</th><th class="num">Beantragt</th><th class="num">Rest</th><th class="num">Krankheitstage</th><th></th></tr></thead>
+            <tbody id="ab-vac"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="filters">
+          <select id="ab-year" aria-label="Jahr"></select>
+          <select id="ab-emp" aria-label="Mitarbeiter"></select>
+          <select id="ab-type" aria-label="Art"></select>
+          <select id="ab-status" aria-label="Status">
+            <option value="">Alle Status</option>
+            <option value="beantragt">Beantragt</option>
+            <option value="genehmigt">Genehmigt</option>
+            <option value="abgelehnt">Abgelehnt</option>
+          </select>
+        </div>
+      </div>
+      <div class="tablebox">
+        <table>
+          <thead><tr><th>Mitarbeiter</th><th>Art</th><th>Zeitraum</th><th class="num">Arbeitstage</th><th>Status</th><th>Notiz</th><th></th></tr></thead>
+          <tbody id="ab-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="view" id="v-calendar" hidden>
+      <div class="cal-head">
+        <div class="cal-nav">
+          <button class="ghost" id="cal-prev" aria-label="Vorheriger Monat">←</button>
+          <h2 id="cal-title"></h2>
+          <button class="ghost" id="cal-next" aria-label="Nächster Monat">→</button>
+          <button class="small" id="cal-today">Heute</button>
+        </div>
+        <div class="cal-tools">
+          <div class="seg" id="cal-mode"><button data-mode="abs" aria-selected="true">Abwesenheiten</button><button data-mode="time" aria-selected="false">Stunden</button></div>
+          <select id="cal-proj" hidden aria-label="Projekt"></select>
+        </div>
+      </div>
+      <div class="tablebox"><table class="cal" id="cal"></table></div>
+      <div class="legend" id="cal-legend"></div>
+      <p class="muted" id="cal-note" style="margin:0;font-size:.84rem"></p>
+    </section>
+
+    <section class="view" id="v-team" hidden>
+      <div class="toolbar">
+        <div class="filters">
+          <input type="search" id="tt-q" placeholder="Name, Position, Abteilung …" aria-label="Mitarbeiter suchen">
+          <select id="tt-status" aria-label="Status">
+            <option value="aktiv">Aktive</option>
+            <option value="inaktiv">Deaktiviert / ausgeschieden</option>
+            <option value="">Alle</option>
+          </select>
+        </div>
+        <button class="primary" id="btn-add-user" hidden>Benutzer anlegen</button>
+      </div>
+      <div class="tablebox">
+        <table>
+          <thead id="tt-head"></thead>
+          <tbody id="tt-body"></tbody>
+        </table>
+      </div>
+      <div class="panel" id="roles-panel" hidden>
+        <div class="panel-head"><h2>Rollen</h2><button class="small" id="btn-add-role">Rolle anlegen</button></div>
+        <p class="muted" style="margin:0;font-size:.86rem">Eine Rolle ist eine gespeicherte Auswahl an Rechten. Änderst du eine Rolle, gilt das sofort für alle Benutzer mit dieser Rolle.</p>
+        <div class="list" id="roles-list"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="drawer-root"></div>
+<div id="toast-root"></div>
+<script src="/app.js"></script>
+</body>
+</html>

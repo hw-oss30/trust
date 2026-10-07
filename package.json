@@ -1,0 +1,13 @@
+{
+  "name": "trustreels-personal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal- und Projektsoftware für Trustreels: Login, Rollen & Rechte, Zeiterfassung, Abwesenheiten, Projektstand.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED"
+}

@@ -85,7 +85,7 @@
   // ---------- Zustand ----------
   let data = null;
   const ui = {
-    tab: store.get("tr-tab") || "overview", tmView: store.get("tr-tmview") === "list" ? "list" : "cal", projView: store.get("tr-projview") === "list" ? "list" : "cards", ovQ: "", tmMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1), unit: store.get("tr-unit") === "h" ? "h" : "pct", calMode: store.get("tr-calmode") === "time" ? "time" : "abs",
+    tab: store.get("tr-tab") || "overview", setSec: store.get("tr-setsec") || "users", tmView: store.get("tr-tmview") === "list" ? "list" : "cal", projView: store.get("tr-projview") === "list" ? "list" : "cards", ovQ: "", tmMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1), unit: store.get("tr-unit") === "h" ? "h" : "pct", calMode: store.get("tr-calmode") === "time" ? "time" : "abs",
     calProj: "", projSel: null, year: new Date().getFullYear(), calMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   };
 
@@ -175,7 +175,7 @@
       { id: "absences", label: can("absences.view_all") ? "Abwesenheiten" : "Meine Abwesenheiten", show: can("absences.request") || can("absences.view_all") },
       { id: "calendar", label: "Kalender", show: true },
       { id: "stats", label: "Statistiken", show: true },
-      { id: "team", label: isAdmin() ? "Benutzer & Rollen" : "Mitarbeiter", show: isAdmin() || can("employees.view") },
+      { id: "team", label: "Mitarbeiter", show: !isAdmin() && can("employees.view") },
       { id: "settings", label: "Einstellungen", show: isAdmin() },
     ].filter(t => t.show);
   }
@@ -184,6 +184,7 @@
   function render() {
     if (!data) return;
     const list = tabs();
+    if (ui.tab === "team" && isAdmin()) { ui.tab = "settings"; ui.setSec = "users"; }
     if (!list.some(t => t.id === ui.tab)) ui.tab = "overview";
     $("#tabs").innerHTML = list.map(t => `<button role="tab" data-tab="${t.id}" aria-selected="${t.id === ui.tab}">${esc(t.label)}</button>`).join("");
     $$("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
@@ -191,6 +192,16 @@
     renderTimerBtn();
     $("#fab").hidden = !(can("times.book") || can("times.manage") || can("absences.request") || can("absences.manage"));
     ["overview", "projects", "time", "absences", "calendar", "stats", "team", "settings"].forEach(v => $("#v-" + v).hidden = v !== ui.tab);
+    // Einstellungen: Benutzer und Rollen nutzen die Team-Ansicht, der Rest das Einstellungs-Formular
+    const setNav = $("#set-nav"); setNav.hidden = ui.tab !== "settings";
+    if (ui.tab === "settings") {
+      const secs = [["users", "Benutzer"], ["roles", "Rollen"], ["mail", "E-Mail"], ["urlaub", "Urlaub"], ["kosten", "Kosten"]];
+      if (!secs.some(([k]) => k === ui.setSec)) ui.setSec = "users";
+      setNav.innerHTML = `<div class="seg subnav-seg" role="tablist">${secs.map(([k, l]) => `<button role="tab" data-sec="${k}" aria-selected="${ui.setSec === k}">${l}</button>`).join("")}</div>`;
+      $$("button", setNav).forEach(b => b.onclick = () => { ui.setSec = b.dataset.sec; store.set("tr-setsec", ui.setSec); render(); });
+      const teamSec = ui.setSec === "users" || ui.setSec === "roles";
+      $("#v-team").hidden = !teamSec; $("#v-settings").hidden = teamSec;
+    }
     $("#me-avatar").textContent = initials(me()).toUpperCase();
     $("#me-name").textContent = fullName(me());
     $("#me-role").textContent = isAdmin() ? "Administrator" : me().roleName;
@@ -198,8 +209,8 @@
     $("#btn-add-abs").hidden = !(can("absences.request") || can("absences.manage"));
     $("#btn-add-abs").textContent = can("absences.manage") ? "Abwesenheit eintragen" : "Abwesenheit beantragen";
     $$(".unit-seg button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.unit === ui.unit)));
-    ({ overview: renderOverview, projects: renderProjects, time: renderTime, absences: renderAbsences, calendar: renderCalendar, stats: renderStats, team: renderTeam, settings: renderSettings })[ui.tab]();
-    labelTables($("#v-" + ui.tab));
+    ({ overview: renderOverview, projects: renderProjects, time: renderTime, absences: renderAbsences, calendar: renderCalendar, stats: renderStats, team: renderTeam, settings: () => (ui.setSec === "users" || ui.setSec === "roles" ? renderTeam() : renderSettings()) })[ui.tab]();
+    labelTables($("#v-team").hidden ? $("#v-" + ui.tab) : $("#v-team"));
   }
 
   // ---------- Übersicht ----------
@@ -245,7 +256,7 @@
 
   function projCard(p) {
     const budget = budgetOf(p), booked = Number(p.gebucht) || 0, cls = progCls(booked, budget);
-    return `<div class="proj" role="button" tabindex="0" aria-pressed="${ui.tab === "projects" && p.id === ui.projSel}" data-proj="${esc(p.id)}">
+    return `<div class="proj" role="button" tabindex="0" data-proj="${esc(p.id)}">
       <div class="proj-top"><div style="min-width:0"><div class="proj-name"><span class="dot" style="background:${projColor(p)};margin-right:8px"></span>${esc(p.name || "Ohne Namen")}</div><div class="muted" style="font-size:.84rem">${esc([p.kunde, p.nummer].filter(Boolean).join(" · ") || (p.intern ? "Internes Projekt" : "Ohne Kunde"))}</div></div>
         <div class="chips" style="justify-content:flex-end">${projBadges(p)}${can("projects.manage") ? editBtn(`data-edit-proj="${esc(p.id)}" aria-label="Projekt ${esc(p.name)} bearbeiten"`) : ""}</div></div>
       <div class="proj-big"><span class="pct big ${cls}" title="${esc(progTitle(booked, budget))}">${progText(booked, budget)}</span><span class="muted" style="font-size:.82rem">${!budget ? "ohne Stundenbudget" : ui.unit === "pct" ? `${fmtH(booked)} / ${fmtH(budget)} h` : `${Math.round(booked / budget * 100)} %`}</span></div>
@@ -268,7 +279,7 @@
     if (ui.projView !== "list") return `<div class="projects">${projs.map(projCard).join("")}</div>`;
     return `<div class="tablebox proj-table"><table><thead><tr><th>Projekt</th><th>Positionen</th><th class="num">Gebucht / Geplant</th><th class="num">Fortschritt</th><th style="width:16%"></th><th></th></tr></thead><tbody>${projs.map(p => {
       const budget = budgetOf(p), booked = Number(p.gebucht) || 0, cls = progCls(booked, budget);
-      return `<tr class="click ${ui.tab === "projects" && p.id === ui.projSel ? "sel" : ""}" data-proj="${esc(p.id)}" tabindex="0">
+      return `<tr class="click" data-proj="${esc(p.id)}" tabindex="0">
         <td><div class="name"><span class="dot" style="background:${projColor(p)};margin-right:8px"></span>${esc(p.name || "Ohne Namen")} ${projBadges(p)}</div><div class="muted" style="font-size:.82rem">${esc([p.nummer, p.kunde || (p.intern ? "Intern" : "")].filter(Boolean).join(" · ") || "–")}${p.start || p.ende ? ` · ${de(p.start)} – ${de(p.ende)}` : ""}</div></td>
         <td><div class="chips">${(p.positions || []).map(x => { const b = Number(x.gebucht) || 0, s2 = Number(x.stunden) || 0; return `<span class="chip" title="${esc(progTitle(b, s2))}">${esc(x.name)} <span class="pct ${progCls(b, s2)}">${progText(b, s2)}</span></span>`; }).join("") || `<span class="muted">–</span>`}</div></td>
         <td class="num">${fmtH(booked)} / ${budget ? fmtH(budget) + " h" : "–"}</td>
@@ -287,10 +298,7 @@
   const projBadges = (p) => (p.intern ? `<span class="pill neutral">Intern</span>` : "") + (p.archiviert ? `<span class="pill neutral">Archiviert</span>` : p.status === "abgeschlossen" ? `<span class="pill neutral">Abgeschlossen</span>` : "");
   function bindProjCards(root) {
     $$("[data-proj]", root).forEach(el => {
-      const go = () => {
-        ui.projSel = el.dataset.proj; if (ui.tab !== "projects") setTab("projects"); else renderProjects();
-        const rep = $("#pj-report"); if (rep && !rep.hidden) rep.scrollIntoView({ behavior: "smooth", block: "start" });
-      };
+      const go = () => openProjDetail(el.dataset.proj);
       el.onclick = go; el.onkeydown = (ev) => { if (ev.target === el && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); go(); } };
     });
     $$("[data-edit-proj]", root).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); openProj(projById(b.dataset.editProj)); });
@@ -370,24 +378,26 @@
     const FILTERS = { aktiv: p => !p.archiviert && p.status !== "abgeschlossen", intern: p => !p.archiviert && p.intern, abgeschlossen: p => !p.archiviert && p.status === "abgeschlossen", archiviert: p => p.archiviert };
     const q = $("#pj-q").value.trim();
     const projs = all.filter(p => (!st || (FILTERS[st] || (() => true))(p)) && projMatches(p, q));
-    if (!projs.some(p => p.id === ui.projSel)) ui.projSel = (projs[0] || {}).id || null;
     $("#btn-add-proj").hidden = !can("projects.manage");
     const box = $("#pj-list");
     $$("#v-projects .proj-view-seg button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.pview === ui.projView)));
     box.innerHTML = projs.length ? projectsBlock(projs) : `<div class="panel empty">${all.length ? (q ? "Kein Projekt gefunden." : "Keine Projekte mit diesem Status.") : "Noch keine Projekte." + (can("projects.manage") ? " Lege über „Projekt anlegen“ das erste an." : "")}</div>`;
     bindProjCards(box); bindUnitSeg($("#v-projects")); bindViewSeg($("#v-projects"));
+  }
 
-    const rep = $("#pj-report"); const p = projById(ui.projSel);
-    if (!p) { rep.hidden = true; return; }
-    rep.hidden = false;
+  // Projektstand eines Projekts als Seitenpanel (Handy: bildschirmfüllend)
+  function openProjDetail(id) {
+    const p = projById(id); if (!p) return;
+    ui.projSel = p.id;
+    const back = { back: () => openProjDetail(p.id) };
     const budget = budgetOf(p), booked = Number(p.gebucht) || 0, rest = budget - booked, cls = progCls(booked, budget);
     const tms = data.times.filter(t => t.projektId === p.id);
     const seeAll = can("times.view_all");
     const byEmp = {};
     tms.forEach(t => { const k = t.mitarbeiterId; (byEmp[k] = byEmp[k] || { total: 0, pos: {} }).total += Number(t.stunden) || 0; byEmp[k].pos[t.positionId] = (byEmp[k].pos[t.positionId] || 0) + (Number(t.stunden) || 0); });
     const empRows = Object.entries(byEmp).sort((a, b) => b[1].total - a[1].total);
-    rep.innerHTML = `
-      <div class="panel-head">
+    openDrawer(`
+      <div class="panel-head detail-head">
         <div style="min-width:0"><span class="eyebrow">Projektstand</span><h2><span class="dot" style="background:${projColor(p)};margin-right:8px;vertical-align:2px"></span>${esc(p.name || "Ohne Namen")}</h2>
           <div class="muted" style="font-size:.88rem">${esc([p.kunde, p.nummer, p.start || p.ende ? `${de(p.start)} – ${de(p.ende)}` : ""].filter(Boolean).join(" · "))}</div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -420,15 +430,16 @@
       <div class="subhead">Einträge</div>
       <div class="tablebox"><table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Position</th><th>Tätigkeit</th><th class="num">Stunden</th><th></th></tr></thead><tbody>
         ${tms.length ? [...tms].sort((a, b) => b.datum.localeCompare(a.datum)).map(t => `<tr class="click" data-time="${esc(t.id)}"><td style="white-space:nowrap">${WD[parse(t.datum).getDay()]}, ${de(t.datum)}</td><td>${esc(fullName(empById(t.mitarbeiterId)))}</td><td>${esc((posById(p, t.positionId) || {}).name || "–")}</td><td class="muted">${esc(t.beschreibung || "–")}</td><td class="num"><strong>${fmtH(Number(t.stunden) || 0)}</strong></td><td class="actions">${mayEditTime(t) ? editBtn(`data-edit-time="${esc(t.id)}"`) : ""}</td></tr>`).join("") : `<tr><td colspan="6" class="empty">Noch keine Zeiten erfasst.</td></tr>`}
-      </tbody></table></div>` : ""}`;
-    const ed = $("#rep-edit"); if (ed) ed.onclick = () => openProj(p);
-    const ar = $("#rep-arch"); if (ar) ar.onclick = async () => {
-      ar.disabled = true;
-      try { await api("PUT", `/api/projects/${p.id}`, { ...p, archiviert: !p.archiviert }); await refresh(); toast(p.archiviert ? "Projekt wiederhergestellt" : "Projekt archiviert"); }
-      catch (e) { toast(e.message); ar.disabled = false; }
-    };
-    const ad = $("#rep-add"); if (ad) ad.onclick = () => openTime(null, { projektId: p.id });
-    $$("tr[data-time]", rep).forEach(r => r.onclick = () => openTime(data.times.find(t => t.id === r.dataset.time)));
+      </tbody></table></div>` : ""}`, (rep) => {
+      const ed = $("#rep-edit", rep); if (ed) ed.onclick = () => openProj(p, back);
+      const ar = $("#rep-arch", rep); if (ar) ar.onclick = async () => {
+        ar.disabled = true;
+        try { await api("PUT", `/api/projects/${p.id}`, { ...p, archiviert: !p.archiviert }); await refresh(); toast(p.archiviert ? "Projekt wiederhergestellt" : "Projekt archiviert"); openProjDetail(p.id); }
+        catch (e) { toast(e.message); ar.disabled = false; }
+      };
+      const ad = $("#rep-add", rep); if (ad) ad.onclick = () => openTime(null, { projektId: p.id }, back);
+      $$("tr[data-time]", rep).forEach(r => r.onclick = () => openTime(data.times.find(t => t.id === r.dataset.time), null, back));
+    }, { wide: true, label: `Projektstand ${p.name || ""}` });
   }
 
   // ---------- Zeiterfassung ----------
@@ -818,8 +829,10 @@
   }
   function renderTeam() {
     const admin = isAdmin();
+    const rolesOnly = admin && ui.tab === "settings" && ui.setSec === "roles";
     $("#btn-add-user").hidden = !admin;
-    $("#roles-panel").hidden = !admin;
+    $("#roles-panel").hidden = !rolesOnly;
+    $("#tt-users").hidden = rolesOnly;
     const q = $("#tt-q").value.trim().toLowerCase(), st = $("#tt-status").value;
     const rows = data.users.filter(e => (!st || (e.status || "aktiv") === st) && (!q || [fullName(e), e.username, e.position, e.abteilung, e.email].join(" ").toLowerCase().includes(q))).sort(sortEmp);
     $("#tt-head").innerHTML = admin
@@ -847,7 +860,8 @@
     const b = ev.target.closest("[data-edit-time],[data-edit-abs],[data-edit-user],[data-edit-role]");
     if (!b) return;
     ev.stopPropagation();
-    if (b.dataset.editTime) openTime(data.times.find(t => t.id === b.dataset.editTime));
+    const inDetail = b.closest(".drawer.wide") && ui.projSel;
+    if (b.dataset.editTime) openTime(data.times.find(t => t.id === b.dataset.editTime), null, inDetail ? { back: () => openProjDetail(ui.projSel) } : {});
     else if (b.dataset.editAbs) openAbs(data.absences.find(a => a.id === b.dataset.editAbs));
     else if (b.dataset.editUser) openUser(data.users.find(u => u.id === b.dataset.editUser));
     else if (b.dataset.editRole) openRole(roleById(b.dataset.editRole));
@@ -956,7 +970,7 @@
     const v = $("#v-settings"), st = data.settings, m = st.mail || {}, u = st.urlaub, k = st.kosten;
     const [mm, dd] = String(u.stichtag || "").split("-");
     v.innerHTML = `
-      <div class="grid2">
+      <div class="settings-col">
         <form class="panel" id="f-mail" novalidate autocomplete="off">
           <div class="panel-head"><h2>E-Mail-Benachrichtigungen</h2><span class="pill ${m.aktiv ? "ok" : "neutral"}">${m.aktiv ? "Aktiv" : "Aus"}</span></div>
           <label class="perm"><input type="checkbox" id="m-aktiv" ${m.aktiv ? "checked" : ""}><span><strong>Benachrichtigungen verschicken</strong><br><span class="muted">Mails werden über euer Postfach verschickt (z. B. Strato).</span></span></label>
@@ -973,7 +987,7 @@
           <div class="err" id="m-err" hidden></div>
           <div class="drawer-foot"><button type="button" id="m-test">Testmail senden</button><div class="right"><button class="primary" type="submit">Speichern</button></div></div>
         </form>
-        <div style="display:flex;flex-direction:column;gap:20px;min-width:0">
+        <div class="settings-col">
           <form class="panel" id="f-vac" novalidate>
             <div class="panel-head"><h2>Urlaubsübertrag</h2><span class="pill ${u.uebertrag ? "ok" : "neutral"}">${u.uebertrag ? "Aktiv" : "Aus"}</span></div>
             <label class="perm"><input type="checkbox" id="v-on" ${u.uebertrag ? "checked" : ""}><span><strong>Resturlaub automatisch ins Folgejahr übertragen</strong><br><span class="muted">Pro Mitarbeiter lässt sich der Übertrag im Benutzerprofil von Hand überschreiben.</span></span></label>
@@ -990,6 +1004,7 @@
           </form>
         </div>
       </div>`;
+    $("#f-mail").hidden = ui.setSec !== "mail"; $("#f-vac").hidden = ui.setSec !== "urlaub"; $("#f-cost").hidden = ui.setSec !== "kosten";
     const save = (form, errSel, body, msg) => submitWith($("button[type=submit]", form), v, errSel, async () => { await api("PUT", "/api/settings", body); await refresh(); toast(msg); });
     $("#f-mail").onsubmit = (ev) => { ev.preventDefault(); save(ev.target, "#m-err", { mail: { aktiv: $("#m-aktiv").checked, empfaenger: $("#m-empf").value.trim(), antrag: $("#m-antrag").checked, krank: $("#m-krank").checked, entscheidung: $("#m-entsch").checked,
       host: $("#m-host").value.trim(), port: $("#m-port").value, user: $("#m-user").value.trim(), pass: $("#m-pass").value, from: $("#m-from").value.trim() } }, "E-Mail-Einstellungen gespeichert"); };
@@ -1006,14 +1021,18 @@
   // ---------- Formulare ----------
   function closeDrawer() { $("#drawer-root").innerHTML = ""; document.removeEventListener("keydown", escClose); }
   function escClose(e) { if (e.key === "Escape") closeDrawer(); }
-  function openDrawer(html, onMount) {
+  function openDrawer(html, onMount, opts = {}) {
     const root = $("#drawer-root");
-    root.innerHTML = `<div class="scrim"><aside class="drawer" role="dialog" aria-modal="true">${html}</aside></div>`;
+    root.innerHTML = `<div class="scrim"><aside class="drawer ${opts.wide ? "wide" : ""}" role="dialog" aria-modal="true" ${opts.label ? `aria-label="${esc(opts.label)}"` : ""}>
+      <button type="button" class="drawer-x" aria-label="Schließen" title="Schließen (Esc)">✕</button>${html}</aside></div>`;
     const scrim = $(".scrim", root);
     scrim.addEventListener("mousedown", (e) => { if (e.target === scrim) closeDrawer(); });
+    $(".drawer-x", root).onclick = closeDrawer;
     document.addEventListener("keydown", escClose);
-    onMount($(".drawer", root));
-    const f = $("input:not([disabled]):not([type=checkbox]), select:not([disabled])", root); if (f) f.focus();
+    const d = $(".drawer", root);
+    onMount(d);
+    labelTables(d);
+    if (!opts.wide) { const f = $("input:not([disabled]):not([type=checkbox]), select:not([disabled])", root); if (f) f.focus(); }
   }
   function showErr(d, sel, msg) { const err = $(sel, d); err.textContent = msg; err.hidden = false; }
   // Löschen mit Rückfrage im Fuß des Formulars
@@ -1062,21 +1081,22 @@
     openDrawer(`
       <div><span class="eyebrow">${isNew ? "Neu" : "Benutzer"}</span><h2>${isNew ? "Benutzer anlegen" : esc(fullName(u))}</h2></div>
       ${isNew ? "" : (() => { const y = new Date().getFullYear(), st = yearStats(u, y); return `<div class="minis"><div class="mini"><span class="k">Überstunden</span><span class="v pct ${saldoCls(st.overtime)}">${signH(st.overtime)}</span></div><div class="mini"><span class="k">Resturlaub</span><span class="v">${fmtDays(st.vac.rest)}</span></div><div class="mini"><span class="k">Krankheitstage</span><span class="v">${fmtDays(st.vac.sick)}</span></div></div><button type="button" class="small" id="u-report" style="align-self:flex-start">Mitarbeiter-Report öffnen</button>`; })()}
+      <div class="seg utabs" role="tablist">${[["zugang", "Zugang & Rechte"], ["person", "Person"], ["zeit", "Arbeitszeit & Urlaub"]].map(([k, l], i) => `<button type="button" role="tab" data-utab-btn="${k}" aria-selected="${i === 0}">${l}</button>`).join("")}</div>
       <form id="f-user" novalidate autocomplete="off">
-        <div class="section">
+        <div class="section" data-utab="zugang">
           <span class="subhead" style="margin:0">Zugang</span>
           <div class="row2"><label>Benutzername<input id="u-username" value="${esc(u.username)}" autocapitalize="none" spellcheck="false" placeholder="z. B. maxmustermann"></label>
             <label>Status<select id="u-status"><option value="aktiv">Aktiv – darf sich anmelden</option><option value="inaktiv">Deaktiviert / ausgeschieden</option></select></label></div>
           <label>${isNew ? "Passwort" : "Neues Passwort setzen"}<div class="inline"><input id="u-password" type="text" autocomplete="new-password" placeholder="${isNew ? "mindestens 8 Zeichen" : "leer lassen = unverändert"}"><button type="button" class="small" id="u-gen">Generieren</button></div></label>
           ${isNew ? `<div class="hint">Gib das Passwort dem Mitarbeiter persönlich weiter. Er kann es danach in seinen Einstellungen selbst ändern.</div>` : ""}
         </div>
-        <div class="section">
+        <div class="section" data-utab="zugang">
           <span class="subhead" style="margin:0">Rechte</span>
           ${rightsHtml("u", true)}
           <div class="inline"><input id="u-newrole" placeholder="Name für neue Rolle, z. B. Editor"><button type="button" class="small" id="u-saverole">Als Rolle speichern</button></div>
           <div class="err" id="u-role-err" hidden></div>
         </div>
-        <div class="section">
+        <div class="section" data-utab="person" hidden>
           <span class="subhead" style="margin:0">Person</span>
           <div class="row2"><label>Vorname<input id="u-vorname" value="${esc(u.vorname)}"></label><label>Nachname<input id="u-nachname" value="${esc(u.nachname)}"></label></div>
           <div class="row2"><label>Position<input id="u-position" value="${esc(u.position)}" list="dl-pos"></label><label>Abteilung<input id="u-abteilung" list="dl-dept" value="${esc(u.abteilung)}"></label></div>
@@ -1084,6 +1104,10 @@
           <datalist id="dl-pos">${[...new Set([...POS_SUGGEST, ...data.users.map(x => x.position).filter(Boolean)])].map(x => `<option value="${esc(x)}">`).join("")}</datalist>
           <div class="row2"><label>E-Mail<input id="u-email" type="email" value="${esc(u.email)}"></label><label>Telefon<input id="u-telefon" type="tel" value="${esc(u.telefon)}"></label></div>
           <div class="row2"><label>Eintrittsdatum<input id="u-eintritt" type="date" value="${esc(u.eintritt)}"></label><label>Austrittsdatum<input id="u-austritt" type="date" value="${esc(u.austritt)}"></label></div>
+          <label>Notizen (nur für Admins sichtbar)<textarea id="u-notiz" rows="3">${esc(u.notiz)}</textarea></label>
+        </div>
+        <div class="section" data-utab="zeit" hidden>
+          <span class="subhead" style="margin:0">Arbeitszeit, Urlaub &amp; Überstunden</span>
           <div class="row2"><label>Wochenstunden<input id="u-stunden" type="number" min="0" max="80" step="0.5" value="${esc(u.stunden)}"></label><label>Urlaubstage pro Jahr<input id="u-urlaub" type="number" min="0" max="80" step="0.5" value="${esc(u.urlaub)}"></label></div>
           <fieldset class="wk" id="u-base-days"><legend>Diensttage</legend>${[1, 2, 3, 4, 5, 6].map(i => `<label class="chk"><input type="checkbox" value="${i}" ${empDays(u).includes(i) ? "checked" : ""}>${WD[i]}</label>`).join("")}</fieldset>
           <div class="section"><span class="subhead" style="margin:0">Arbeitszeit-Änderungen</span>
@@ -1094,7 +1118,6 @@
           ${kostenAktiv() ? `<label>Interner Kostensatz (€ pro Stunde)<input id="u-kosten" type="number" min="0" step="0.5" value="${esc(u.kostensatz)}" placeholder="z. B. 35"></label>` : ""}
           <div class="row2"><label>Überstunden zählen ab<input id="u-erfassung" type="date" value="${esc(u.erfassungAb)}"></label><label>Überstunden-Übertrag (h)<input id="u-uebertrag" type="number" step="0.25" value="${esc(u.uebertrag)}" placeholder="0"></label></div>
           <div class="hint">Leer = ab Anlage des Kontos. Mit dem Übertrag gibst du Überstunden aus der Zeit vor der Software mit (negativ für Minusstunden).</div>
-          <label>Notizen (nur für Admins sichtbar)<textarea id="u-notiz" rows="3">${esc(u.notiz)}</textarea></label>
         </div>
         <div class="err" id="u-err" hidden></div>
         <div class="drawer-foot">
@@ -1104,6 +1127,8 @@
       </form>`, (d) => {
       const q = (s) => $(s, d);
       q("#u-status").value = u.status || "aktiv";
+      const showUtab = (k) => { $$("[data-utab-btn]", d).forEach(b => b.setAttribute("aria-selected", String(b.dataset.utabBtn === k))); $$("[data-utab]", d).forEach(sec => sec.hidden = sec.dataset.utab !== k); };
+      $$("[data-utab-btn]", d).forEach(b => b.onclick = () => showUtab(b.dataset.utabBtn));
       const azList = q("#u-az-list");
       const addAz = (c) => {
         const row = document.createElement("div"); row.className = "az-row";
@@ -1153,7 +1178,8 @@
           urlaubUebertragJahr: new Date().getFullYear(), urlaubUebertragWert: g("#u-carry"),
           ...(q("#u-kosten") ? { kostensatz: g("#u-kosten") } : {}),
         };
-        if (isNew && !body.password) { showErr(d, "#u-err", "Bitte ein Passwort festlegen oder generieren."); return; }
+        if (isNew && !body.password) { showUtab("zugang"); showErr(d, "#u-err", "Bitte ein Passwort festlegen oder generieren."); return; }
+        if (!body.vorname && !body.nachname) { showUtab("person"); showErr(d, "#u-err", "Bitte mindestens Vor- oder Nachnamen eintragen."); return; }
         submitWith(ev.submitter, d, "#u-err", async () => {
           if (isNew) await api("POST", "/api/users", body); else await api("PUT", `/api/users/${u.id}`, body);
           await refresh(); closeDrawer(); toast(isNew ? "Benutzer angelegt" : body.password ? "Gespeichert, Passwort geändert" : "Gespeichert");
@@ -1234,7 +1260,7 @@
   }
   $("#btn-me").onclick = openMe;
 
-  function openProj(p) {
+  function openProj(p, opts = {}) {
     const isNew = !p; p = p || { status: "aktiv", farbe: data.projects.length % PCOL.length, positions: [{ name: "", stunden: "" }] };
     const booked = {}; (p.positions || []).forEach(x => booked[x.id] = Number(x.gebucht) || 0);
     openDrawer(`
@@ -1286,7 +1312,7 @@
       };
       (p.positions || []).forEach(addRow); updateSum();
       q("#p-pos-add").onclick = () => { $("[data-n]", addRow({ name: "", stunden: "" })).focus(); };
-      q("#p-cancel").onclick = closeDrawer;
+      q("#p-cancel").onclick = () => opts.back ? opts.back() : closeDrawer();
       const del = q("#p-del");
       if (del) del.onclick = () => {
         const n = data.times.filter(t => t.projektId === p.id).length;
@@ -1304,6 +1330,7 @@
           const r = isNew ? await api("POST", "/api/projects", body) : await api("PUT", `/api/projects/${p.id}`, body);
           ui.projSel = isNew ? r.id : p.id;
           await refresh(); closeDrawer(); toast(isNew ? "Projekt angelegt" : "Gespeichert");
+          if (opts.back) opts.back();
         });
       };
     });
@@ -1385,7 +1412,7 @@
       }
       q("#t-emp").addEventListener("input", () => { fillPos(q("#t-pos").value); hint(); });
       hint();
-      q("#t-cancel").onclick = closeDrawer;
+      q("#t-cancel").onclick = () => opts.back ? opts.back() : closeDrawer();
       const del = q("#t-del");
       if (del) del.onclick = () => confirmDelete(d, "#t-del-wrap", "Eintrag löschen?", async () => { await api("DELETE", `/api/times/${t.id}`); await refresh(); closeDrawer(); toast("Eintrag gelöscht"); }, () => openTime(t));
       q("#f-time").onsubmit = (ev) => {
@@ -1401,6 +1428,7 @@
           if (isNew) await api("POST", "/api/times", body); else await api("PUT", `/api/times/${t.id}`, body);
           if (opts.onSaved) await opts.onSaved();
           await refresh(); closeDrawer(); toast(isNew ? `${fmtH(std)} h erfasst` : "Gespeichert");
+          if (opts.back) opts.back();
         });
       };
     });

@@ -54,6 +54,7 @@
   </header>
 
   <main class="wrap">
+    <nav class="subnav" id="set-nav" hidden aria-label="Einstellungen"></nav>
     <section class="view" id="v-overview" hidden></section>
 
     <section class="view" id="v-projects" hidden>
@@ -73,7 +74,6 @@
         <button class="primary" id="btn-add-proj" hidden>Projekt anlegen</button>
       </div>
       <div id="pj-list"></div>
-      <div class="panel" id="pj-report" hidden></div>
     </section>
 
     <section class="view" id="v-time" hidden>
@@ -169,6 +169,7 @@
     <section class="view" id="v-settings" hidden></section>
 
     <section class="view" id="v-team" hidden>
+      <div id="tt-users" style="display:flex;flex-direction:column;gap:20px">
       <div class="toolbar">
         <div class="filters">
           <input type="search" id="tt-q" placeholder="Name, Position, Abteilung …" aria-label="Mitarbeiter suchen">
@@ -185,6 +186,7 @@
           <thead id="tt-head"></thead>
           <tbody id="tt-body"></tbody>
         </table>
+      </div>
       </div>
       <div class="panel" id="roles-panel" hidden>
         <div class="panel-head"><h2>Rollen</h2><button class="small" id="btn-add-role">Rolle anlegen</button></div>

@@ -470,3 +470,5 @@ input.pill-input { width: 220px; max-width: 100%; border-radius: 999px; padding:
 .drawer [data-utab="person"], .drawer [data-utab="zeit"] { border-top: 0; padding-top: 6px; }
 #tt-users[hidden] { display: none !important; }
 .drawer > * { flex-shrink: 0; }
+button.danger-fill { background: var(--bad); box-shadow: 0 4px 14px var(--bad-soft); }
+#f-reset .settings-col, #f-reset { max-width: 760px; }

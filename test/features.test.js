@@ -148,3 +148,30 @@ test("Arbeitszeit-Änderungen und manueller Urlaubsübertrag werden gespeichert 
   assert.equal(s.status, 200);
   assert.equal((await admin("PUT", "/api/settings", { urlaub: { uebertrag: true, stichtag: "31.03" } })).status, 400);
 });
+
+test("Daten zurücksetzen: Benutzer bleiben, Stichtag wird gesetzt, Bestätigung nötig", async () => {
+  assert.equal((await emp("POST", "/api/admin/reset", { confirm: "ZURÜCKSETZEN", times: true })).status, 403);
+  assert.equal((await admin("POST", "/api/admin/reset", { times: true })).status, 400, "ohne Bestätigung");
+  const backup = await admin("GET", "/api/admin/backup");
+  assert.equal(backup.status, 200);
+  assert.ok(backup.body.users.every(u => !u.passwordHash), "Sicherung ohne Passwörter");
+  assert.equal(backup.body.settings.mail.pass, "(nicht exportiert)");
+  await emp("POST", "/api/times", { projektId: projId, positionId: posId, datum: "2026-11-03", stunden: 1 });
+  const usersBefore = (await admin("GET", "/api/bootstrap")).body.users.length;
+  // Nur vor dem 01.11. löschen: November-Buchung und ihr Projekt bleiben
+  let r = await admin("POST", "/api/admin/reset", { confirm: "ZURÜCKSETZEN", before: "2026-11-01", times: true, absences: true, projects: true, timers: true, erfassungAb: "2026-11-01" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  let b = (await admin("GET", "/api/bootstrap")).body;
+  assert.deepEqual(b.times.map(t => t.datum), ["2026-11-03"]);
+  assert.equal(b.projects.length, 1);
+  assert.ok(b.absences.every(a => a.bis >= "2026-11-01"));
+  assert.ok(b.users.every(u => u.erfassungAb === "2026-11-01"));
+  assert.equal(b.users.length, usersBefore);
+  // Alles löschen
+  r = await admin("POST", "/api/admin/reset", { confirm: "ZURÜCKSETZEN", times: true, absences: true, projects: true });
+  b = (await admin("GET", "/api/bootstrap")).body;
+  assert.equal(b.times.length + b.absences.length + b.projects.length, 0);
+  assert.equal(b.users.length, usersBefore);
+  const lena = await login("lena", "geheim123");
+  assert.equal((await lena("GET", "/api/bootstrap")).status, 200, "Mitarbeiter kann sich weiter anmelden");
+});

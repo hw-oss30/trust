@@ -195,7 +195,7 @@
     // Einstellungen: Benutzer und Rollen nutzen die Team-Ansicht, der Rest das Einstellungs-Formular
     const setNav = $("#set-nav"); setNav.hidden = ui.tab !== "settings";
     if (ui.tab === "settings") {
-      const secs = [["users", "Benutzer"], ["roles", "Rollen"], ["mail", "E-Mail"], ["urlaub", "Urlaub"], ["kosten", "Kosten"]];
+      const secs = [["users", "Benutzer"], ["roles", "Rollen"], ["mail", "E-Mail"], ["urlaub", "Urlaub"], ["kosten", "Kosten"], ["daten", "Daten"]];
       if (!secs.some(([k]) => k === ui.setSec)) ui.setSec = "users";
       setNav.innerHTML = `<div class="seg subnav-seg" role="tablist">${secs.map(([k, l]) => `<button role="tab" data-sec="${k}" aria-selected="${ui.setSec === k}">${l}</button>`).join("")}</div>`;
       $$("button", setNav).forEach(b => b.onclick = () => { ui.setSec = b.dataset.sec; store.set("tr-setsec", ui.setSec); render(); });
@@ -1002,9 +1002,55 @@
             <div class="err" id="k-err" hidden></div>
             <div class="drawer-foot"><span></span><div class="right"><button class="primary" type="submit">Speichern</button></div></div>
           </form>
+          <form class="panel" id="f-reset" novalidate>
+            <div class="panel-head"><h2>Daten sichern &amp; zurücksetzen</h2></div>
+            <p class="muted" style="margin:0;font-size:.88rem">Zum Beispiel für einen sauberen Start nach der Testphase. <strong>Benutzer, Rollen und Einstellungen bleiben immer erhalten.</strong></p>
+            <div class="drawer-foot" style="border-top:0;padding-top:0"><span class="muted" style="font-size:.86rem;align-self:center">Vorher eine Sicherung herunterladen:</span><div class="right"><button type="button" id="r-backup">Sicherung herunterladen</button></div></div>
+            <span class="subhead" style="margin:0">Was soll gelöscht werden?</span>
+            <label>Zeitraum<select id="r-mode"><option value="all">Alle Einträge</option><option value="before">Nur Einträge vor einem Stichtag</option></select></label>
+            <label id="r-before-wrap" hidden>Einträge vor diesem Datum löschen<input id="r-before" type="date" value="2026-11-01"></label>
+            <label class="perm"><input type="checkbox" id="r-times" checked><span>Zeitbuchungen <span class="muted" id="r-c-times"></span></span></label>
+            <label class="perm"><input type="checkbox" id="r-abs" checked><span>Abwesenheiten (Urlaub, Krankheit …) <span class="muted" id="r-c-abs"></span></span></label>
+            <label class="perm"><input type="checkbox" id="r-proj" checked><span>Projekte <span class="muted" id="r-c-proj"></span><br><span class="muted">Projekte, auf die danach noch Zeiten gebucht sind, bleiben erhalten.</span></span></label>
+            <label class="perm"><input type="checkbox" id="r-timer" checked><span>Laufende Stoppuhren <span class="muted" id="r-c-timer"></span></span></label>
+            <span class="subhead" style="margin:0">Überstunden neu starten</span>
+            <label class="perm"><input type="checkbox" id="r-start" checked><span>Bei allen Mitarbeitern „Überstunden zählen ab“ setzen auf <input id="r-start-date" type="date" value="2026-11-01" style="width:auto;margin-left:6px"></span></label>
+            <label><span>Zur Bestätigung <strong>ZURÜCKSETZEN</strong> eintippen</span><input id="r-confirm" autocomplete="off" placeholder="ZURÜCKSETZEN"></label>
+            <div class="err" id="r-err" hidden></div>
+            <div class="drawer-foot"><span></span><div class="right"><button class="primary danger-fill" type="submit">Endgültig zurücksetzen</button></div></div>
+          </form>
         </div>
       </div>`;
-    $("#f-mail").hidden = ui.setSec !== "mail"; $("#f-vac").hidden = ui.setSec !== "urlaub"; $("#f-cost").hidden = ui.setSec !== "kosten";
+    $("#f-mail").hidden = ui.setSec !== "mail"; $("#f-vac").hidden = ui.setSec !== "urlaub"; $("#f-cost").hidden = ui.setSec !== "kosten"; $("#f-reset").hidden = ui.setSec !== "daten";
+    // Zurücksetzen: Anzahl der betroffenen Einträge live anzeigen
+    const rCounts = () => {
+      const before = $("#r-mode").value === "before" ? $("#r-before").value : "";
+      const gone = (d) => !before || d < before;
+      const t = data.times.filter(x => gone(x.datum)), restTimes = data.times.filter(x => !gone(x.datum));
+      $("#r-before-wrap").hidden = $("#r-mode").value !== "before";
+      $("#r-c-times").textContent = `(${t.length})`;
+      $("#r-c-abs").textContent = `(${data.absences.filter(a => gone(a.bis)).length})`;
+      const keepT = $("#r-times").checked ? restTimes : data.times;
+      $("#r-c-proj").textContent = `(${data.projects.filter(p => !keepT.some(x => x.projektId === p.id)).length} von ${data.projects.length})`;
+      $("#r-c-timer").textContent = data.me.timer ? "(mindestens deine eigene)" : "";
+    };
+    ["#r-mode", "#r-before", "#r-times"].forEach(x => $(x).addEventListener("input", rCounts)); rCounts();
+    $("#r-backup").onclick = (ev) => submitWith(ev.target, v, "#r-err", async () => {
+      const b = await api("GET", "/api/admin/backup");
+      const url = URL.createObjectURL(new Blob([JSON.stringify(b, null, 1)], { type: "application/json" }));
+      const a = document.createElement("a"); a.href = url; a.download = `trustreels-sicherung-${todayIso()}.json`; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000); toast("Sicherung heruntergeladen");
+    });
+    $("#f-reset").onsubmit = (ev) => {
+      ev.preventDefault();
+      if ($("#r-confirm").value.trim() !== "ZURÜCKSETZEN") { showErr(v, "#r-err", "Bitte zur Bestätigung ZURÜCKSETZEN eintippen."); return; }
+      const body = { confirm: "ZURÜCKSETZEN", before: $("#r-mode").value === "before" ? $("#r-before").value : "", times: $("#r-times").checked, absences: $("#r-abs").checked,
+        projects: $("#r-proj").checked, timers: $("#r-timer").checked, erfassungAb: $("#r-start").checked ? $("#r-start-date").value : "" };
+      submitWith(ev.submitter, v, "#r-err", async () => {
+        const r = await api("POST", "/api/admin/reset", body); await refresh();
+        const c = r.count; toast(`Gelöscht: ${c.times} Zeiten, ${c.absences} Abwesenheiten, ${c.projects} Projekte${c.users ? ` · Überstunden ab ${de(body.erfassungAb)}` : ""}`);
+      });
+    };
     const save = (form, errSel, body, msg) => submitWith($("button[type=submit]", form), v, errSel, async () => { await api("PUT", "/api/settings", body); await refresh(); toast(msg); });
     $("#f-mail").onsubmit = (ev) => { ev.preventDefault(); save(ev.target, "#m-err", { mail: { aktiv: $("#m-aktiv").checked, empfaenger: $("#m-empf").value.trim(), antrag: $("#m-antrag").checked, krank: $("#m-krank").checked, entscheidung: $("#m-entsch").checked,
       host: $("#m-host").value.trim(), port: $("#m-port").value, user: $("#m-user").value.trim(), pass: $("#m-pass").value, from: $("#m-from").value.trim() } }, "E-Mail-Einstellungen gespeichert"); };
